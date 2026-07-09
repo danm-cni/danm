@@ -4,7 +4,7 @@ export GOOS=linux
 # built binary still depends on and dinamically linked against the build
 # environments standard library implementation (e.g. glibc/musl/...)
 export CGO_ENABLED=0
-cd "${GOPATH}/src/github.com/nokia/danm"
+cd "${GOPATH}/src/github.com/danm-cni/danm"
 go mod vendor
 
 #
@@ -22,4 +22,4 @@ then
   LATEST_TAG=$(git describe --tags)
 fi
 
-go install -mod=vendor -a -ldflags "-extldflags '-static' -X main.version=${LATEST_TAG} -X main.commitHash=${COMMIT_HASH}" github.com/nokia/danm/cmd/...
+go install -mod=vendor -a -ldflags "-extldflags '-static' -X main.version=${LATEST_TAG} -X main.commitHash=${COMMIT_HASH}" github.com/danm-cni/danm/cmd/...

@@ -19,9 +19,9 @@ limitations under the License.
 package fake
 
 import (
-	clientset "github.com/nokia/danm/crd/client/clientset/versioned"
-	danmv1 "github.com/nokia/danm/crd/client/clientset/versioned/typed/danm/v1"
-	fakedanmv1 "github.com/nokia/danm/crd/client/clientset/versioned/typed/danm/v1/fake"
+	clientset "github.com/danm-cni/danm/crd/client/clientset/versioned"
+	danmv1 "github.com/danm-cni/danm/crd/client/clientset/versioned/typed/danm/v1"
+	fakedanmv1 "github.com/danm-cni/danm/crd/client/clientset/versioned/typed/danm/v1/fake"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/discovery"

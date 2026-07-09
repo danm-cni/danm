@@ -36,7 +36,7 @@ It is actually as easy as cloning the repository from GitHub, and executing the 
 script from the root of the project!
 
 ```
-git clone github.com/nokia/danm
+git clone github.com/danm-cni/danm
 cd danm
 ./build_danm.sh
 ```
@@ -103,7 +103,7 @@ SERVICEACCOUNT_TOKEN=$(kubectl get --namespace kube-system secrets ${SECRET_NAME
 Put a valid CNI config file into the CNI configuration directory of all your kubelet nodes (by
 default it is `/etc/cni/net.d/`), based on the following ecxample configuration:
 
-[Example CNI config file](https://github.com/nokia/danm/tree/master/integration/cni_config/00-danm.conf)
+[Example CNI config file](https://github.com/danm-cni/danm/tree/master/integration/cni_config/00-danm.conf)
 
 As kubelet considers the first .conf file in the configured directory as the valid CNI config of the
 cluster, it is generally a good idea to prefix the .conf file of any CNI metaplugin with "00".
@@ -124,7 +124,7 @@ With both the service account token from step 2, and the cluster information fro
 a kubeconfig file can be created. If you ran the commands as show above, this is now simply
 a matter of replacing the variables either manually or with a tool like `envsubst`.
 
-[Example kubeconf file](https://github.com/nokia/danm/tree/master/integration/cni_config/example_kubeconfig.yaml)
+[Example kubeconf file](https://github.com/danm-cni/danm/tree/master/integration/cni_config/example_kubeconfig.yaml)
 
 Also provision the necessary RBAC rules so DANM can do its job:
 

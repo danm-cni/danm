@@ -7,7 +7,7 @@ ARG GID=147
 # Stage: Build container. Used to build all binaries, once
 #
 FROM golang:1.13-alpine3.10 AS builder
-MAINTAINER Levente Kale <levente.kale@nokia.com>
+MAINTAINER Levente Kale <levente.kale@gmail.com>
 
 ARG USERNAME
 ARG UID
@@ -17,10 +17,10 @@ ARG LATEST_TAG
 
 RUN apk add --no-cache ca-certificates make git bash
 
-RUN mkdir -p ${GOPATH}/src/github.com/nokia/danm
-COPY / ${GOPATH}/src/github.com/nokia/danm/
+RUN mkdir -p ${GOPATH}/src/github.com/danm-cni/danm
+COPY / ${GOPATH}/src/github.com/danm-cni/danm/
 
-WORKDIR ${GOPATH}/src/github.com/nokia/danm
+WORKDIR ${GOPATH}/src/github.com/danm-cni/danm
 
 RUN scm/build/build.sh \
  && adduser -u ${UID} -D -H -s /sbin/nologin ${USERNAME} \
@@ -45,7 +45,7 @@ USER ${USER}
 # Stage: Netwatcher
 #
 FROM base-alpine AS netwatcher
-MAINTAINER Levente Kale <levente.kale@nokia.com>
+MAINTAINER Levente Kale <levente.kale@gmail.com>
 
 COPY --from=builder /go/bin/netwatcher /usr/local/bin/netwatcher
 RUN apk add --no-cache --virtual .tools libcap  \
@@ -58,7 +58,7 @@ ENTRYPOINT ["/usr/local/bin/netwatcher"]
 # Stage: Svcwatcher
 #
 FROM base-alpine AS svcwatcher
-MAINTAINER Levente Kale <levente.kale@nokia.com>
+MAINTAINER Levente Kale <levente.kale@gmail.com>
 
 COPY --from=builder /go/bin/svcwatcher /usr/local/bin/svcwatcher
 ENTRYPOINT ["/usr/local/bin/svcwatcher"]
@@ -68,7 +68,7 @@ ENTRYPOINT ["/usr/local/bin/svcwatcher"]
 # Stage: Webhook
 #
 FROM base-alpine AS webhook
-MAINTAINER Levente Kale <levente.kale@nokia.com>
+MAINTAINER Levente Kale <levente.kale@gmail.com>
 
 COPY --from=builder /go/bin/webhook /usr/local/bin/webhook
 ENTRYPOINT ["/usr/local/bin/webhook"]

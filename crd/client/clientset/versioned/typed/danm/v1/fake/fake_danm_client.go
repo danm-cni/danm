@@ -19,7 +19,7 @@ limitations under the License.
 package fake
 
 import (
-	v1 "github.com/nokia/danm/crd/client/clientset/versioned/typed/danm/v1"
+	v1 "github.com/danm-cni/danm/crd/client/clientset/versioned/typed/danm/v1"
 	rest "k8s.io/client-go/rest"
 	testing "k8s.io/client-go/testing"
 )

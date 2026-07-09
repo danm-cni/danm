@@ -23,9 +23,9 @@ import (
 	sync "sync"
 	time "time"
 
-	versioned "github.com/nokia/danm/crd/client/nad/clientset/versioned"
-	internalinterfaces "github.com/nokia/danm/crd/client/nad/informers/externalversions/internalinterfaces"
-	k8scnicncfio "github.com/nokia/danm/crd/client/nad/informers/externalversions/k8s.cni.cncf.io"
+	versioned "github.com/danm-cni/danm/crd/client/nad/clientset/versioned"
+	internalinterfaces "github.com/danm-cni/danm/crd/client/nad/informers/externalversions/internalinterfaces"
+	k8scnicncfio "github.com/danm-cni/danm/crd/client/nad/informers/externalversions/k8s.cni.cncf.io"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"

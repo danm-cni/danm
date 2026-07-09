@@ -19,8 +19,8 @@ limitations under the License.
 package danm
 
 import (
-	v1 "github.com/nokia/danm/crd/client/informers/externalversions/danm/v1"
-	internalinterfaces "github.com/nokia/danm/crd/client/informers/externalversions/internalinterfaces"
+	v1 "github.com/danm-cni/danm/crd/client/informers/externalversions/danm/v1"
+	internalinterfaces "github.com/danm-cni/danm/crd/client/informers/externalversions/internalinterfaces"
 )
 
 // Interface provides access to each of this group's versions.

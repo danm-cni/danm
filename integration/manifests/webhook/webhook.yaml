@@ -44,7 +44,7 @@ webhooks:
       # Configure your pre-generated certificate matching the details of your environment
       caBundle: ${CA_BUNDLE}
     rules:
-      # UPDATE IS TEMPORARILY REMOVED DUE TO:https://github.com/nokia/danm/issues/144
+      # UPDATE IS TEMPORARILY REMOVED DUE TO:https://github.com/danm-cni/danm/issues/144
       - operations: ["CREATE"]
         apiGroups: ["danm.io"]
         apiVersions: ["v1"]

@@ -81,6 +81,6 @@ Ferenc Tóth (@TothFerenc)
 Please keep in mind we live in the CET/CEST timezone!
 
 ### Communication channels besides GitHub
-You can contact the core team mainly via email at robert.springer@nokia.com and levente.kale@nokia.com or you can join to our [slack channel](https://danmws.slack.com) using [this](https://join.slack.com/t/danmws/shared_invite/enQtNzEzMTQ4NDM2NTMxLTA3MDM4NGM0YTRjYzlhNGRiMDVlZWRlMjdlNTkwNTBjNWUyNjM0ZDQ3Y2E4YjE3NjVhNTE1MmEyYzkyMDRlNWU) invite link.
+You can contact the core team mainly via email at robert.springer@nokia.com and levente.kale@gmail.com or you can join to our [slack channel](https://danmws.slack.com) using [this](https://join.slack.com/t/danmws/shared_invite/enQtNzEzMTQ4NDM2NTMxLTA3MDM4NGM0YTRjYzlhNGRiMDVlZWRlMjdlNTkwNTBjNWUyNjM0ZDQ3Y2E4YjE3NjVhNTE1MmEyYzkyMDRlNWU) invite link.
 
 But we also do hang around various Kubernetes slack channels, you might get lucky if you look around networking, node, or resource management :)

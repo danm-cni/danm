@@ -19,8 +19,8 @@ limitations under the License.
 package k8s
 
 import (
-	internalinterfaces "github.com/nokia/danm/crd/client/nad/informers/externalversions/internalinterfaces"
-	v1 "github.com/nokia/danm/crd/client/nad/informers/externalversions/k8s.cni.cncf.io/v1"
+	internalinterfaces "github.com/danm-cni/danm/crd/client/nad/informers/externalversions/internalinterfaces"
+	v1 "github.com/danm-cni/danm/crd/client/nad/informers/externalversions/k8s.cni.cncf.io/v1"
 )
 
 // Interface provides access to each of this group's versions.

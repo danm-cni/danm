@@ -1,5 +1,5 @@
 <!--  Thanks for sending a pull request!  Here are some tips for you:
-If this is your first time, read our contributor guidelines https://github.com/nokia/danm/blob/master/CONTRIBUTING.md
+If this is your first time, read our contributor guidelines https://github.com/danm-cni/danm/blob/master/CONTRIBUTING.md
 -->
 
 **What type of PR is this?**

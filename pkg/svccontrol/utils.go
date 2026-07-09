@@ -2,21 +2,21 @@ package svccontrol
 
 import (
 	"encoding/json"
+	"reflect"
+
+	danmv1 "github.com/danm-cni/danm/crd/apis/danm/v1"
+	"github.com/danm-cni/danm/pkg/netcontrol"
 	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
-	danmv1 "github.com/nokia/danm/crd/apis/danm/v1"
-	"github.com/nokia/danm/pkg/netcontrol"
-	"reflect"
 )
 
 const (
-  PodSelector = "danm.io/selector"
-  DanmNetSelector = "danm.io/network"
-  TenantNetSelector = "danm.io/tenantNetwork"
-  ClusterNetSelector = "danm.io/clusterNetwork"
-  TolerateUnreadyEps = "service.alpha.kubernetes.io/tolerate-unready-endpoints"
+	PodSelector        = "danm.io/selector"
+	DanmNetSelector    = "danm.io/network"
+	TenantNetSelector  = "danm.io/tenantNetwork"
+	ClusterNetSelector = "danm.io/clusterNetwork"
+	TolerateUnreadyEps = "service.alpha.kubernetes.io/tolerate-unready-endpoints"
 )
-
 
 func IsContain(ep, svc map[string]string) bool {
 	epFit := true
@@ -153,23 +153,23 @@ func MatchExistingSvc(de *danmv1.DanmEp, servicesList []*corev1.Service) []*core
 }
 
 func isDepSelectedBySvc(dep *danmv1.DanmEp, netSelectors map[string]string) bool {
-  if len(netSelectors) == 0 {
-    return false
-  }
-  if danmNet, ok := netSelectors[netcontrol.DanmNetKind]; ok {
-    if danmNet == dep.Spec.NetworkName && (netcontrol.DanmNetKind == dep.Spec.ApiType || "" == dep.Spec.ApiType) {
-      return true
-    }
-  }
-  if tenantNet, ok := netSelectors[netcontrol.TenantNetworkKind]; ok {
-    if tenantNet == dep.Spec.NetworkName && netcontrol.TenantNetworkKind == dep.Spec.ApiType {
-      return true
-    }
-  }
-  if clusterNet, ok := netSelectors[netcontrol.ClusterNetworkKind]; ok {
-    if clusterNet == dep.Spec.NetworkName && netcontrol.ClusterNetworkKind == dep.Spec.ApiType {
-      return true
-    }
-  }
-  return false
+	if len(netSelectors) == 0 {
+		return false
+	}
+	if danmNet, ok := netSelectors[netcontrol.DanmNetKind]; ok {
+		if danmNet == dep.Spec.NetworkName && (netcontrol.DanmNetKind == dep.Spec.ApiType || "" == dep.Spec.ApiType) {
+			return true
+		}
+	}
+	if tenantNet, ok := netSelectors[netcontrol.TenantNetworkKind]; ok {
+		if tenantNet == dep.Spec.NetworkName && netcontrol.TenantNetworkKind == dep.Spec.ApiType {
+			return true
+		}
+	}
+	if clusterNet, ok := netSelectors[netcontrol.ClusterNetworkKind]; ok {
+		if clusterNet == dep.Spec.NetworkName && netcontrol.ClusterNetworkKind == dep.Spec.ApiType {
+			return true
+		}
+	}
+	return false
 }

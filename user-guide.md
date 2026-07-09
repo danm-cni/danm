@@ -81,13 +81,13 @@ Wonder how? Refer to chapter [Connecting TenantNetworks to TenantConfigs](#conne
 **ClusterNetworks** on the other hand is a cluster-wide API, and as such, can be -or should be- only provisioned by administrator level users. Administrators can freely set all available configuration options, even the physical parameters.
  The other nice thing in ClusterNetworks is that all Pods, in any namespace can connect to them - unless the network administrator forbade it via the newly introduced **AllowedTenants** configuration list.
 
-Interested user can find reference manifests showcasing the features of the new APIs under [DANM V4 example manifests](https://github.com/nokia/danm/tree/master/example/4_0_examples).
+Interested user can find reference manifests showcasing the features of the new APIs under [DANM V4 example manifests](https://github.com/danm-cni/danm/tree/master/example/4_0_examples).
  ##### Network management in the practical sense
 Regardless which paradigm thrives in your cluster, network objects are managed the exact same way - you just might not be allowed to execute a specific provisioning operation in case you are trying to overstep your boundaries! Don't worry, as DANM will always explicitly and instantly tell you when this happens.
 Unless explicitly stated in the description of a specific feature, all API features are generally supported, and supported the same way regardless through which network management API type you use them.
 
 Network management always starts with the creation of Kubernetes API objects, logically representing the characteristics of a network Pods can connect to.
-Users first need to create the manifest files of these objects according to the schema described in the [DanmNet schema](https://github.com/nokia/danm/tree/master/schema/DanmNet.yaml) ,  [TenantNetwork schema](https://github.com/nokia/danm/tree/master/schema/TenantNetwork.yaml) , or [ClusterNetwork schema](https://github.com/nokia/danm/tree/master/schema/ClusterNetwork.yaml)  template files.
+Users first need to create the manifest files of these objects according to the schema described in the [DanmNet schema](https://github.com/danm-cni/danm/tree/master/schema/DanmNet.yaml) ,  [TenantNetwork schema](https://github.com/danm-cni/danm/tree/master/schema/TenantNetwork.yaml) , or [ClusterNetwork schema](https://github.com/danm-cni/danm/tree/master/schema/ClusterNetwork.yaml)  template files.
 A network object can be created just like any other Kubernetes object, for example by issuing:
  ```
 kubectl create -f test-net1.yaml
@@ -372,7 +372,7 @@ Instead, these parameters are either entirely, or partially managed by DANM in T
 DANM does this by introducing a third new API with v4.0 called **TenantConfig**. TenantConfig is a mandatory API when DANM is used in the production grade mode.
 TenantConfig is a cluster-wide API, containing two major parameters: physical interface profiles usable by TenantNetworks, and NetworkType:NetworkID mappings.
 
-Refer to [TenantConfig schema](https://github.com/nokia/danm/tree/master/schema/TenantConfig.yaml) for more information on TenantConfigs.
+Refer to [TenantConfig schema](https://github.com/danm-cni/danm/tree/master/schema/TenantConfig.yaml) for more information on TenantConfigs.
 ##### Selecting a physical interface profile
 There are multiple ways of how DANM can select the appropriate interface profile for a tenant user's network.
 Note: physical interface profiles are only relevant for dynamic backends.
@@ -401,7 +401,7 @@ Network administrators can configure NetworkType: NetworkID mappings into the Te
 Thus it becomes guaranteed that the tenant user's network will use the right CNI configuration file during Pod creation!
 #### List of validation rules
 ##### DanmNet
-Every CREATE, and ~~PUT~~ (see [https://github.com/nokia/danm/issues/144](https://github.com/nokia/danm/issues/144)) DanmNet operation is subject to the following validation rules:
+Every CREATE, and ~~PUT~~ (see [https://github.com/danm-cni/danm/issues/144](https://github.com/danm-cni/danm/issues/144)) DanmNet operation is subject to the following validation rules:
 
  1. spec.Options.Cidr must be supplied in a valid IPv4 CIDR notation
  2. all gateway addresses belonging to an entry of spec.Options.Routes  shall be in the defined IPv4 CIDR
@@ -430,7 +430,7 @@ Every CREATE, and ~~PUT~~ (see [https://github.com/nokia/danm/issues/144](https:
 
 Not complying with any of these rules results in the denial of the provisioning operation.
 ##### TenantNetwork
-Every CREATE, and ~~PUT~~ (see [https://github.com/nokia/danm/issues/144](https://github.com/nokia/danm/issues/144)) TenantNetwork operation is subject to the DanmNet validation rules no. 1-16, 18, 19.
+Every CREATE, and ~~PUT~~ (see [https://github.com/danm-cni/danm/issues/144](https://github.com/danm-cni/danm/issues/144)) TenantNetwork operation is subject to the DanmNet validation rules no. 1-16, 18, 19.
 In addition TenantNetwork provisioning has the following extra rules:
 
  1. spec.Options.Vlan cannot be provided
@@ -444,7 +444,7 @@ Every DELETE TenantNetwork operation is subject to the DanmNet validation rule n
 
 Not complying with any of these rules results in the denial of the provisioning operation.
 ##### ClusterNetwork
-Every CREATE, and ~~PUT~~ (see [https://github.com/nokia/danm/issues/144](https://github.com/nokia/danm/issues/144)) ClusterNetwork operation is subject to the DanmNet validation rules no. 1-18, 20-21.
+Every CREATE, and ~~PUT~~ (see [https://github.com/danm-cni/danm/issues/144](https://github.com/danm-cni/danm/issues/144)) ClusterNetwork operation is subject to the DanmNet validation rules no. 1-18, 20-21.
 
 Every DELETE ClusterNetwork operation is subject to the DanmNet validation rule no.22.
 

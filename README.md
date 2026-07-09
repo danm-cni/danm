@@ -3,7 +3,7 @@
 [![Build Status](https://travis-ci.com/nokia/danm.svg?branch=master)](https://travis-ci.com/Nokia/danm)
 [![Unit Test Coverage](https://coveralls.io/repos/github/nokia/danm/badge.svg?branch=master)](https://coveralls.io/github/nokia/danm?branch=master)
 
-<img src="https://github.com/nokia/danm/raw/master/logo_w_name.png" width="100">
+<img src="https://github.com/danm-cni/danm/raw/master/logo_w_name.png" width="100">
 
 # Join our community!
 Want to hang-out with us? Join our Slack under https://danmws.slack.com/!
@@ -12,7 +12,7 @@ Feel yourself officially invited by clicking on [this](https://join.slack.com/t/
 
 # Want to get more bang for the buck? Check out DANM Utils too!
 DANM Utils is the home to independet Operators built on top of the DANM network management platform, providing value added services to your cluster!
-Interested in adding outage resiliency to your IPAM, or universal network policy support? Look no further and hop over to https://github.com/nokia/danm-utils today!
+Interested in adding outage resiliency to your IPAM, or universal network policy support? Look no further and hop over to https://github.com/danm-cni/danm-utils today!
 
 ## Table of Contents
 * [Table of Contents](#table-of-contents)
@@ -100,7 +100,7 @@ It is important to state this, because the features DANM provides open up a coup
  We strongly feel that all such scenarios incompatible with the life-cycle of a standard CNI plugin firmly fall outside the responsibility of the core DANM project.
 That being said, tell us about your Kubernetes breaking ideas! We are open to accept such plugins into the wider umbrella of the existing eco-system: outside of the core project, but still loosely linked to suite as optional, external components.
 Just because something doesn't fit into core DANM, it does not mean it can't fit into your cloud!
-Please visit [DANM utils](https://github.com/nokia/danm-utils) repository for more info.
+Please visit [DANM utils](https://github.com/danm-cni/danm-utils) repository for more info.
 
 
 ## Deployment
@@ -111,12 +111,12 @@ See [User Guide](user-guide.md).
 
 ## Contributing
 
-Please read [CONTRIBUTING.md](https://github.com/nokia/danm/blob/master/CONTRIBUTING.md) for details on our code of conduct, and the process for submitting pull requests to us.
+Please read [CONTRIBUTING.md](https://github.com/danm-cni/danm/blob/master/CONTRIBUTING.md) for details on our code of conduct, and the process for submitting pull requests to us.
 
 ## Authors
 
 * **Robert Springer** (@rospring) - Initial work (V1 Python), IPAM, Netwatcher, Svcwatcher [Nokia](https://github.com/nokia)
-* **Levente Kale** (@Levovar) - Initial work (V2 Golang), Documentation, Integration, SCM, UTs, Metaplugin, V4 work [Nokia](https://github.com/nokia)
+* **Levente Kale** (@Levovar) - Initial work (V2 Golang), Documentation, Integration, SCM, UTs, Metaplugin, V4 work (EX)[Nokia](https://github.com/nokia)
 
 Special thanks to the original author who started the whole project in 2015 by putting a proprietary network management plugin between Kubelet and Docker; and also for coining the DANM acronym:
 **Peter Braun** (@peter-braun)

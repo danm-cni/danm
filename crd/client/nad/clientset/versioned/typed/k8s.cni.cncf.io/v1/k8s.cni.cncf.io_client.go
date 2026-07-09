@@ -19,8 +19,8 @@ limitations under the License.
 package v1
 
 import (
-	v1 "github.com/nokia/danm/crd/apis/k8s.cni.cncf.io/v1"
-	"github.com/nokia/danm/crd/client/nad/clientset/versioned/scheme"
+	v1 "github.com/danm-cni/danm/crd/apis/k8s.cni.cncf.io/v1"
+	"github.com/danm-cni/danm/crd/client/nad/clientset/versioned/scheme"
 	rest "k8s.io/client-go/rest"
 )
 

@@ -21,7 +21,7 @@ package fake
 import (
 	"context"
 
-	danmv1 "github.com/nokia/danm/crd/apis/danm/v1"
+	danmv1 "github.com/danm-cni/danm/crd/apis/danm/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"

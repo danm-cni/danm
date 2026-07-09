@@ -3,10 +3,20 @@ package svccontrol
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
+
+	danmv1 "github.com/danm-cni/danm/crd/apis/danm/v1"
+	danmclientset "github.com/danm-cni/danm/crd/client/clientset/versioned"
+	danmscheme "github.com/danm-cni/danm/crd/client/clientset/versioned/scheme"
+	danminformers "github.com/danm-cni/danm/crd/client/informers/externalversions/danm/v1"
+	danmlisters "github.com/danm-cni/danm/crd/client/listers/danm/v1"
+	"github.com/danm-cni/danm/pkg/datastructs"
+	"github.com/danm-cni/danm/pkg/ipam"
 	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
-	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -16,20 +26,11 @@ import (
 	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
-	"strings"
-	"time"
-	danmv1 "github.com/nokia/danm/crd/apis/danm/v1"
-	danmclientset "github.com/nokia/danm/crd/client/clientset/versioned"
-	danmscheme "github.com/nokia/danm/crd/client/clientset/versioned/scheme"
-	danminformers "github.com/nokia/danm/crd/client/informers/externalversions/danm/v1"
-	danmlisters "github.com/nokia/danm/crd/client/listers/danm/v1"
-  "github.com/nokia/danm/pkg/datastructs"
-  "github.com/nokia/danm/pkg/ipam"
 )
 
 const (
-  MaxUpdateRetry = 400
-  RetryInterval  = 25
+	MaxUpdateRetry = 400
+	RetryInterval  = 25
 )
 
 type Controller struct {
@@ -162,24 +163,26 @@ func (c *Controller) syncHandler(key string) error {
 	return nil
 }
 
-//////////////////////////
-//                      //
-//  Instance functions  //
-//                      //
-//////////////////////////
+// ////////////////////////
+//
+//	                    //
+//	Instance functions  //
+//	                    //
+//
+// ////////////////////////
 func (c *Controller) EpCheckUpdate(ipAddr, ip6Addr string, eps *corev1.Endpoints, pod *corev1.Pod, early bool) error {
-  wasIpv4AddressFound := isIpInEp(ipAddr,  eps)
-  wasIpv6AddressFound := isIpInEp(ip6Addr, eps)
-  if (wasIpv4AddressFound || (ipAddr  != "" && ipAddr  != ipam.NoneAllocType && ipAddr  != ipam.DynamicAllocType)) &&
-     (wasIpv6AddressFound || (ip6Addr != "" && ip6Addr != ipam.NoneAllocType && ip6Addr != ipam.DynamicAllocType)) {
-    return nil
-  }
+	wasIpv4AddressFound := isIpInEp(ipAddr, eps)
+	wasIpv6AddressFound := isIpInEp(ip6Addr, eps)
+	if (wasIpv4AddressFound || (ipAddr != "" && ipAddr != ipam.NoneAllocType && ipAddr != ipam.DynamicAllocType)) &&
+		(wasIpv6AddressFound || (ip6Addr != "" && ip6Addr != ipam.NoneAllocType && ip6Addr != ipam.DynamicAllocType)) {
+		return nil
+	}
 	targetRef := &corev1.ObjectReference{
 		Kind:            "pod",
 		Namespace:       pod.ObjectMeta.Namespace,
 		Name:            pod.ObjectMeta.Name,
 		ResourceVersion: pod.ObjectMeta.ResourceVersion,
-    UID:             pod.ObjectMeta.UID,
+		UID:             pod.ObjectMeta.UID,
 	}
 	if PodReady(pod) || early {
 		eps.Subsets[0].Addresses = createChangedEpAddressList(ipAddr, ip6Addr, pod, eps, targetRef, eps.Subsets[0].Addresses)
@@ -191,43 +194,43 @@ func (c *Controller) EpCheckUpdate(ipAddr, ip6Addr string, eps *corev1.Endpoints
 
 func (c *Controller) UpdateEndpoints(eps *corev1.Endpoints) error {
 	if eps.Subsets != nil &&
-     len(eps.Subsets[0].Addresses) == 0 &&
-     len(eps.Subsets[0].NotReadyAddresses) == 0 {
+		len(eps.Subsets[0].Addresses) == 0 &&
+		len(eps.Subsets[0].NotReadyAddresses) == 0 {
 		eps.Subsets = nil
 	}
-  _, err := c.kubeclient.CoreV1().Endpoints(eps.Namespace).Update(context.TODO(), eps, meta_v1.UpdateOptions{})
-  return err
+	_, err := c.kubeclient.CoreV1().Endpoints(eps.Namespace).Update(context.TODO(), eps, meta_v1.UpdateOptions{})
+	return err
 }
 
 func (c *Controller) UpdateEndpointsList(epList []*corev1.Endpoints) error {
-  var err error
+	var err error
 	for _, eps := range epList {
 		err = c.UpdateEndpoints(eps)
-    if err != nil {
-      return err
-    }
+		if err != nil {
+			return err
+		}
 	}
-  return nil
+	return nil
 }
 
 func (c *Controller) CreateModifyEndpoints(svc *corev1.Service, doesEpAlreadyExist bool, des []*danmv1.DanmEp) error {
-  var err error
+	var err error
 	epNew := c.MakeNewEps(svc, des)
-  if doesEpAlreadyExist {
+	if doesEpAlreadyExist {
 		_, err = c.kubeclient.CoreV1().Endpoints(svc.Namespace).Update(context.TODO(), &epNew, meta_v1.UpdateOptions{})
 	} else {
 		_, err = c.kubeclient.CoreV1().Endpoints(svc.Namespace).Create(context.TODO(), &epNew, meta_v1.CreateOptions{})
 	}
-  return err
+	return err
 }
 
-func (c* Controller) UpdatePodRvInEps(epsList []*corev1.Endpoints, pod *corev1.Pod) ([]*corev1.Endpoints) {
+func (c *Controller) UpdatePodRvInEps(epsList []*corev1.Endpoints, pod *corev1.Pod) []*corev1.Endpoints {
 	var epList []*corev1.Endpoints
 	for _, eps := range epsList {
 		if eps.Subsets == nil {
 			continue
 		}
-    newEps := eps.DeepCopy()
+		newEps := eps.DeepCopy()
 		// it is not possible that the same pod is in both ready and in not ready
 		for i, a := range eps.Subsets[0].Addresses {
 			if a.TargetRef != nil {
@@ -249,7 +252,7 @@ func (c* Controller) UpdatePodRvInEps(epsList []*corev1.Endpoints, pod *corev1.P
 	return epList
 }
 
-func (c* Controller) UpdatePodStatusInEps(epsList []*corev1.Endpoints, pod *corev1.Pod, oldReady, newReady bool) ([]*corev1.Endpoints) {
+func (c *Controller) UpdatePodStatusInEps(epsList []*corev1.Endpoints, pod *corev1.Pod, oldReady, newReady bool) []*corev1.Endpoints {
 	var epList []*corev1.Endpoints
 	for _, eps := range epsList {
 		svc, err := c.serviceLister.Services(eps.Namespace).Get(eps.Name)
@@ -260,54 +263,54 @@ func (c* Controller) UpdatePodStatusInEps(epsList []*corev1.Endpoints, pod *core
 		if eps.Subsets == nil {
 			continue
 		}
-    // Make map for addresses
-    readyAddrs := map[string]corev1.EndpointAddress{}
-    notReadyAddrs := map[string]corev1.EndpointAddress{}
-    for _, a := range eps.Subsets[0].Addresses {
-      readyAddrs[a.IP] = a
-    }
-    for _, a := range eps.Subsets[0].NotReadyAddresses {
-      notReadyAddrs[a.IP] = a
-    }
+		// Make map for addresses
+		readyAddrs := map[string]corev1.EndpointAddress{}
+		notReadyAddrs := map[string]corev1.EndpointAddress{}
+		for _, a := range eps.Subsets[0].Addresses {
+			readyAddrs[a.IP] = a
+		}
+		for _, a := range eps.Subsets[0].NotReadyAddresses {
+			notReadyAddrs[a.IP] = a
+		}
 		early := (svc.Annotations[TolerateUnreadyEps] == "true")
 		// it is not possible that the same pod is in both ready and in not ready
 		for _, a := range eps.Subsets[0].Addresses {
 			if (a.TargetRef != nil) && (oldReady || (newReady && early)) &&
-         a.TargetRef.Name == pod.Name && a.TargetRef.Namespace == pod.Namespace && a.TargetRef.UID == pod.ObjectMeta.UID {
+				a.TargetRef.Name == pod.Name && a.TargetRef.Namespace == pod.Namespace && a.TargetRef.UID == pod.ObjectMeta.UID {
 				if !early {
-          delete(readyAddrs, a.IP)
-          notReadyAddrs[a.IP] = a
+					delete(readyAddrs, a.IP)
+					notReadyAddrs[a.IP] = a
 				}
 			}
 		}
 		for _, a := range eps.Subsets[0].NotReadyAddresses {
-			if ( a.TargetRef != nil ) && newReady &&
-          a.TargetRef.Name == pod.Name && a.TargetRef.Namespace == pod.Namespace && a.TargetRef.UID == pod.ObjectMeta.UID {
-        delete(notReadyAddrs, a.IP)
-        readyAddrs[a.IP] = a
+			if (a.TargetRef != nil) && newReady &&
+				a.TargetRef.Name == pod.Name && a.TargetRef.Namespace == pod.Namespace && a.TargetRef.UID == pod.ObjectMeta.UID {
+				delete(notReadyAddrs, a.IP)
+				readyAddrs[a.IP] = a
 			}
 		}
-    newEps := eps.DeepCopy()
-    newEps.Subsets[0].Addresses = nil
-    newEps.Subsets[0].NotReadyAddresses = nil
-    for _, a := range readyAddrs {
-      newEps.Subsets[0].Addresses = append(newEps.Subsets[0].Addresses, a)
-    }
-    for _, a := range notReadyAddrs {
-      newEps.Subsets[0].NotReadyAddresses = append(newEps.Subsets[0].NotReadyAddresses, a)
-    }
-    epList = append(epList, newEps)
+		newEps := eps.DeepCopy()
+		newEps.Subsets[0].Addresses = nil
+		newEps.Subsets[0].NotReadyAddresses = nil
+		for _, a := range readyAddrs {
+			newEps.Subsets[0].Addresses = append(newEps.Subsets[0].Addresses, a)
+		}
+		for _, a := range notReadyAddrs {
+			newEps.Subsets[0].NotReadyAddresses = append(newEps.Subsets[0].NotReadyAddresses, a)
+		}
+		epList = append(epList, newEps)
 	}
 	return epList
 }
 
-func (c *Controller) MakeNewEps(svc *corev1.Service, des []*danmv1.DanmEp) (corev1.Endpoints) {
-  epNew := corev1.Endpoints{
-        	ObjectMeta: meta_v1.ObjectMeta{
-                	Name:        svc.ObjectMeta.Name,
-                	Namespace:   svc.ObjectMeta.Namespace,
-                	Annotations: svc.GetAnnotations(),
-        	},
+func (c *Controller) MakeNewEps(svc *corev1.Service, des []*danmv1.DanmEp) corev1.Endpoints {
+	epNew := corev1.Endpoints{
+		ObjectMeta: meta_v1.ObjectMeta{
+			Name:        svc.ObjectMeta.Name,
+			Namespace:   svc.ObjectMeta.Namespace,
+			Annotations: svc.GetAnnotations(),
+		},
 	}
 	if des == nil {
 		epNew.Subsets = nil
@@ -326,21 +329,21 @@ func (c *Controller) MakeNewEps(svc *corev1.Service, des []*danmv1.DanmEp) (core
 			Namespace:       pod.ObjectMeta.Namespace,
 			Name:            pod.ObjectMeta.Name,
 			ResourceVersion: pod.ObjectMeta.ResourceVersion,
-      UID:             pod.ObjectMeta.UID,
+			UID:             pod.ObjectMeta.UID,
 		}
-    if PodReady(pod) || svc.Annotations[TolerateUnreadyEps] == "true" {
-      readyEpAddrs = createChangedEpAddressList(strings.Split(de.Spec.Iface.Address, "/")[0], strings.Split(de.Spec.Iface.AddressIPv6, "/")[0], pod, nil, targetRef, readyEpAddrs)
-    } else {
-      notReadyEpAddrs = createChangedEpAddressList(strings.Split(de.Spec.Iface.Address, "/")[0], strings.Split(de.Spec.Iface.AddressIPv6, "/")[0], pod, nil, targetRef, notReadyEpAddrs)
-    }
+		if PodReady(pod) || svc.Annotations[TolerateUnreadyEps] == "true" {
+			readyEpAddrs = createChangedEpAddressList(strings.Split(de.Spec.Iface.Address, "/")[0], strings.Split(de.Spec.Iface.AddressIPv6, "/")[0], pod, nil, targetRef, readyEpAddrs)
+		} else {
+			notReadyEpAddrs = createChangedEpAddressList(strings.Split(de.Spec.Iface.Address, "/")[0], strings.Split(de.Spec.Iface.AddressIPv6, "/")[0], pod, nil, targetRef, notReadyEpAddrs)
+		}
 	}
 	var epPorts []corev1.EndpointPort
 	for _, svcPort := range svc.Spec.Ports {
-		ep := corev1.EndpointPort {
-      Name:     svcPort.Name,
-      Port:     svcPort.Port,
-      Protocol: svcPort.Protocol,
-    }
+		ep := corev1.EndpointPort{
+			Name:     svcPort.Name,
+			Port:     svcPort.Port,
+			Protocol: svcPort.Protocol,
+		}
 		epPorts = append(epPorts, ep)
 	}
 	subsets := []corev1.EndpointSubset{
@@ -354,20 +357,22 @@ func (c *Controller) MakeNewEps(svc *corev1.Service, des []*danmv1.DanmEp) (core
 	return epNew
 }
 
-//////////////////////////////
-//                          //
-//  Danmep change handlers  //
-//                          //
-//////////////////////////////
+// ////////////////////////////
+//
+//	                        //
+//	Danmep change handlers  //
+//	                        //
+//
+// ////////////////////////////
 func (c *Controller) addDanmep(obj interface{}) {
 	if !c.podSynced() || !c.serviceSynced() || !c.epsSynced() || !c.danmepSynced() {
 		return
 	}
 	glog.V(5).Infof("addDanmep is called: %s %s", obj.(*danmv1.DanmEp).GetName(), obj.(*danmv1.DanmEp).GetNamespace())
 	de := obj.(*danmv1.DanmEp)
-  ipAddr, ip6Addr := getIpsFromDanmEp(de)
+	ipAddr, ip6Addr := getIpsFromDanmEp(de)
 	svcNamespaceLister := c.serviceLister.Services(de.ObjectMeta.Namespace)
-  svcList, err := svcNamespaceLister.List(labels.Everything())
+	svcList, err := svcNamespaceLister.List(labels.Everything())
 	if err != nil {
 		glog.Errorf("addDanmEp: get services: %s", err)
 		return
@@ -380,39 +385,39 @@ func (c *Controller) addDanmep(obj interface{}) {
 				glog.Errorf("addDanmEp: get pod %s", err)
 				continue
 			}
-      for i := 0; i < MaxUpdateRetry; i++ {
-			  eps, err := c.epsLister.Endpoints(svc.ObjectMeta.Namespace).Get(svc.ObjectMeta.Name)
-			  if err != nil && !errors.IsNotFound(err) {
-				  glog.Errorf("addDanmEp: get ep %s", err)
-				  break
-			  }
-			  if eps != nil && eps.Subsets != nil {
-				  early := (svc.Annotations[TolerateUnreadyEps] == "true")
-				  err := c.EpCheckUpdate(ipAddr, ip6Addr, eps.DeepCopy(), pod, early)
-          if err != nil {
-            if strings.Contains(err.Error(), datastructs.OptimisticLockErrorMsg) {
-              time.Sleep(RetryInterval * time.Millisecond)
-              continue
-            } else {
-              glog.Errorf("Endpoint update for new DanmEp:%s failed with error:%s", de.ObjectMeta.Name, err)
-            }
-          }
-        } else {
-		    	desList := []*danmv1.DanmEp{de}
-			    err = c.CreateModifyEndpoints(svc, true, desList)
-          if err != nil {
-            if strings.Contains(err.Error(), datastructs.OptimisticLockErrorMsg) {
-              time.Sleep(RetryInterval * time.Millisecond)
-              continue
-            } else {
-              glog.Errorf("Endpoint creation for new DanmEp:%s failed with error:%s", de.ObjectMeta.Name, err)
-            }
-          }
-        }
+			for i := 0; i < MaxUpdateRetry; i++ {
+				eps, err := c.epsLister.Endpoints(svc.ObjectMeta.Namespace).Get(svc.ObjectMeta.Name)
+				if err != nil && !errors.IsNotFound(err) {
+					glog.Errorf("addDanmEp: get ep %s", err)
+					break
+				}
+				if eps != nil && eps.Subsets != nil {
+					early := (svc.Annotations[TolerateUnreadyEps] == "true")
+					err := c.EpCheckUpdate(ipAddr, ip6Addr, eps.DeepCopy(), pod, early)
+					if err != nil {
+						if strings.Contains(err.Error(), datastructs.OptimisticLockErrorMsg) {
+							time.Sleep(RetryInterval * time.Millisecond)
+							continue
+						} else {
+							glog.Errorf("Endpoint update for new DanmEp:%s failed with error:%s", de.ObjectMeta.Name, err)
+						}
+					}
+				} else {
+					desList := []*danmv1.DanmEp{de}
+					err = c.CreateModifyEndpoints(svc, true, desList)
+					if err != nil {
+						if strings.Contains(err.Error(), datastructs.OptimisticLockErrorMsg) {
+							time.Sleep(RetryInterval * time.Millisecond)
+							continue
+						} else {
+							glog.Errorf("Endpoint creation for new DanmEp:%s failed with error:%s", de.ObjectMeta.Name, err)
+						}
+					}
+				}
 				break
 			}
-	  }
-  }
+		}
+	}
 }
 
 func (c *Controller) updateDanmep(old, new interface{}) {
@@ -429,61 +434,63 @@ func (c *Controller) updateDanmep(old, new interface{}) {
 func (c *Controller) delDanmep(obj interface{}) {
 	glog.V(5).Infof("delDanmep is called: %s %s", obj.(*danmv1.DanmEp).GetName(), obj.(*danmv1.DanmEp).GetNamespace())
 	de := obj.(*danmv1.DanmEp)
-  ipAddr, ip6Addr := getIpsFromDanmEp(de)
+	ipAddr, ip6Addr := getIpsFromDanmEp(de)
 	var epList []*corev1.Endpoints
-  for i := 0; i < MaxUpdateRetry; i++ {
-  	epNamespaceLister := c.epsLister.Endpoints(de.ObjectMeta.Namespace)
-	  epsList, err := epNamespaceLister.List(labels.Everything())
-	  if err != nil {
-		  glog.Errorf("delDanmep: get epslist: %s", err)
-		  return
-	  }
-	  for _, ep := range epsList {
-		  if ep.Subsets == nil {
-			  continue
-		  }
-		  epNew := ep.DeepCopy()
-		  annotations := epNew.GetAnnotations()
-		  selectorMap, svcNets, err := GetDanmSvcAnnotations(annotations)
-		  if err != nil {
-			  glog.Errorf("delDanmEp: selector %s", err)
-			  return
-		  }
-		  if len(selectorMap) == 0 || !isDepSelectedBySvc(de, svcNets) || epNew.Namespace != de.ObjectMeta.Namespace {
-			  continue
-		  }
-		  deFit := IsContain(de.GetLabels(), selectorMap)
-		  if !deFit {
-			  continue
-		  }
-		  for index, address := range ep.Subsets[0].Addresses {
-        epNew.Subsets[0].Addresses = deleteFromEpAddressList(ipAddr, ip6Addr, index, address, epNew.Subsets[0].Addresses)
-		  }
-		  for index, address := range ep.Subsets[0].NotReadyAddresses {
-        epNew.Subsets[0].NotReadyAddresses = deleteFromEpAddressList(ipAddr, ip6Addr, index, address, epNew.Subsets[0].NotReadyAddresses)
-		  }
-      epList = append(epList, epNew)
-	  }
-	  if len(epList) > 0 {
-		  err = c.UpdateEndpointsList(epList)
-      if err != nil {
-        if strings.Contains(err.Error(), datastructs.OptimisticLockErrorMsg) {
-          time.Sleep(RetryInterval * time.Millisecond)
-          continue
-        } else {
-          glog.Errorf("delete DanmEp event could not be processed for V4 address: %s and V6 address: %s because of error:%v", ipAddr, ip6Addr, err)
-        }
-      }
-    }
-    break
+	for i := 0; i < MaxUpdateRetry; i++ {
+		epNamespaceLister := c.epsLister.Endpoints(de.ObjectMeta.Namespace)
+		epsList, err := epNamespaceLister.List(labels.Everything())
+		if err != nil {
+			glog.Errorf("delDanmep: get epslist: %s", err)
+			return
+		}
+		for _, ep := range epsList {
+			if ep.Subsets == nil {
+				continue
+			}
+			epNew := ep.DeepCopy()
+			annotations := epNew.GetAnnotations()
+			selectorMap, svcNets, err := GetDanmSvcAnnotations(annotations)
+			if err != nil {
+				glog.Errorf("delDanmEp: selector %s", err)
+				return
+			}
+			if len(selectorMap) == 0 || !isDepSelectedBySvc(de, svcNets) || epNew.Namespace != de.ObjectMeta.Namespace {
+				continue
+			}
+			deFit := IsContain(de.GetLabels(), selectorMap)
+			if !deFit {
+				continue
+			}
+			for index, address := range ep.Subsets[0].Addresses {
+				epNew.Subsets[0].Addresses = deleteFromEpAddressList(ipAddr, ip6Addr, index, address, epNew.Subsets[0].Addresses)
+			}
+			for index, address := range ep.Subsets[0].NotReadyAddresses {
+				epNew.Subsets[0].NotReadyAddresses = deleteFromEpAddressList(ipAddr, ip6Addr, index, address, epNew.Subsets[0].NotReadyAddresses)
+			}
+			epList = append(epList, epNew)
+		}
+		if len(epList) > 0 {
+			err = c.UpdateEndpointsList(epList)
+			if err != nil {
+				if strings.Contains(err.Error(), datastructs.OptimisticLockErrorMsg) {
+					time.Sleep(RetryInterval * time.Millisecond)
+					continue
+				} else {
+					glog.Errorf("delete DanmEp event could not be processed for V4 address: %s and V6 address: %s because of error:%v", ipAddr, ip6Addr, err)
+				}
+			}
+		}
+		break
 	}
 }
 
-///////////////////////////
-//                       //
-//  Pod change handlers  //
-//                       //
-///////////////////////////
+// /////////////////////////
+//
+//	                     //
+//	Pod change handlers  //
+//	                     //
+//
+// /////////////////////////
 func (c *Controller) updatePod(old, new interface{}) {
 	glog.V(5).Infof("updatePod is called: %s %s", new.(*corev1.Pod).GetName(), new.(*corev1.Pod).GetNamespace())
 	oldPod := old.(*corev1.Pod)
@@ -496,51 +503,51 @@ func (c *Controller) updatePod(old, new interface{}) {
 	newReady := PodReady(newPod)
 	if oldReady == newReady && !labelChange {
 		// nothing is changed just resource version. endpoints targetref need to be updated
-    for i := 0; i < MaxUpdateRetry; i++ {
-  	  epNamespaceLister := c.epsLister.Endpoints(newPod.ObjectMeta.Namespace)
-	    epsList, err := epNamespaceLister.List(labels.Everything())
-	    if err != nil {
-		    glog.Errorf("updatePod: get eps %s", err)
-		    return
-	    }
-      epList := c.UpdatePodRvInEps(epsList, newPod)
-		  if len(epList) > 0 {
-			  err = c.UpdateEndpointsList(epList)
-        if err != nil {
-          if strings.Contains(err.Error(), datastructs.OptimisticLockErrorMsg) {
-            time.Sleep(RetryInterval * time.Millisecond)
-            continue
-          } else {
-            glog.Errorf("Endpoint update for changed Pod:%s failed with error:%s", newPod.ObjectMeta.Name, err)
-          }
-        }
-      }
-      break
+		for i := 0; i < MaxUpdateRetry; i++ {
+			epNamespaceLister := c.epsLister.Endpoints(newPod.ObjectMeta.Namespace)
+			epsList, err := epNamespaceLister.List(labels.Everything())
+			if err != nil {
+				glog.Errorf("updatePod: get eps %s", err)
+				return
+			}
+			epList := c.UpdatePodRvInEps(epsList, newPod)
+			if len(epList) > 0 {
+				err = c.UpdateEndpointsList(epList)
+				if err != nil {
+					if strings.Contains(err.Error(), datastructs.OptimisticLockErrorMsg) {
+						time.Sleep(RetryInterval * time.Millisecond)
+						continue
+					} else {
+						glog.Errorf("Endpoint update for changed Pod:%s failed with error:%s", newPod.ObjectMeta.Name, err)
+					}
+				}
+			}
+			break
 		}
 		return
 	}
 	// first we need to reflect status change
 	if oldReady != newReady {
-    for i := 0; i < MaxUpdateRetry; i++ {
-  	  epNamespaceLister := c.epsLister.Endpoints(newPod.ObjectMeta.Namespace)
-	    epsList, err := epNamespaceLister.List(labels.Everything())
-	    if err != nil {
-		    glog.Errorf("updatePod: get eps %s", err)
-		    return
-	    }
-		  epList := c.UpdatePodStatusInEps(epsList, newPod, oldReady, newReady)
-		  if len(epList) > 0 {
-			  err = c.UpdateEndpointsList(epList)
-        if err != nil {
-          if strings.Contains(err.Error(), datastructs.OptimisticLockErrorMsg) {
-            time.Sleep(RetryInterval * time.Millisecond)
-            continue
-          } else {
-            glog.Errorf("Endpoint update for changed Pod:%s failed with error:%s", newPod.ObjectMeta.Name, err)
-          }
-        }
-      }
-      break
+		for i := 0; i < MaxUpdateRetry; i++ {
+			epNamespaceLister := c.epsLister.Endpoints(newPod.ObjectMeta.Namespace)
+			epsList, err := epNamespaceLister.List(labels.Everything())
+			if err != nil {
+				glog.Errorf("updatePod: get eps %s", err)
+				return
+			}
+			epList := c.UpdatePodStatusInEps(epsList, newPod, oldReady, newReady)
+			if len(epList) > 0 {
+				err = c.UpdateEndpointsList(epList)
+				if err != nil {
+					if strings.Contains(err.Error(), datastructs.OptimisticLockErrorMsg) {
+						time.Sleep(RetryInterval * time.Millisecond)
+						continue
+					} else {
+						glog.Errorf("Endpoint update for changed Pod:%s failed with error:%s", newPod.ObjectMeta.Name, err)
+					}
+				}
+			}
+			break
 		}
 	}
 	// label change has lower priority
@@ -548,8 +555,8 @@ func (c *Controller) updatePod(old, new interface{}) {
 		// label change
 		podName := newPod.Name
 		podNs := newPod.Namespace
-  	depNamespaceLister := c.danmepLister.DanmEps(newPod.ObjectMeta.Namespace)
-	  desList, err := depNamespaceLister.List(labels.Everything())
+		depNamespaceLister := c.danmepLister.DanmEps(newPod.ObjectMeta.Namespace)
+		desList, err := depNamespaceLister.List(labels.Everything())
 		if err != nil {
 			glog.Errorf("updatePod: get danmep %s", err)
 			return
@@ -560,19 +567,21 @@ func (c *Controller) updatePod(old, new interface{}) {
 				deLabels := newPod.Labels
 				deNew.SetLabels(deLabels)
 				_, err = c.danmclient.DanmV1().DanmEps(deNew.Namespace).Update(context.TODO(), deNew, meta_v1.UpdateOptions{})
-        if err != nil {
-          glog.Errorf("DanmEp:%s label update for changed Pod:%s failed with error:%s", deNew.ObjectMeta.Name, newPod.ObjectMeta.Name, err)
-        }
-      }
+				if err != nil {
+					glog.Errorf("DanmEp:%s label update for changed Pod:%s failed with error:%s", deNew.ObjectMeta.Name, newPod.ObjectMeta.Name, err)
+				}
+			}
 		}
 	}
 }
 
-///////////////////////////
-//                       //
-//  Svc change handlers  //
-//                       //
-///////////////////////////
+// /////////////////////////
+//
+//	                     //
+//	Svc change handlers  //
+//	                     //
+//
+// /////////////////////////
 func (c *Controller) addSvc(obj interface{}) {
 	if !c.podSynced() || !c.serviceSynced() || !c.epsSynced() || !c.danmepSynced() {
 		return
@@ -588,32 +597,32 @@ func (c *Controller) addSvc(obj interface{}) {
 		return
 	}
 	if len(selectorMap) > 0 && len(svcNets) > 0 {
-    for i := 0; i < MaxUpdateRetry; i++ {
-  	  depNamespaceLister := c.danmepLister.DanmEps(svcNs)
-	    desList, err := depNamespaceLister.List(labels.Everything())
-		  if err != nil {
-			  glog.Errorf("addSvc: get danmep %s", err)
-			  return
-		  }
-		  matchingDesList := SelectDesMatchLabels(desList, selectorMap, svcNets, svcNs)
-  	  epNamespaceLister := c.epsLister.Endpoints(svcNs)
-	    epsList, err := epNamespaceLister.List(labels.Everything())
-		  if err != nil {
-			  glog.Errorf("addSvc: get eps %s", err)
-			  return
-		  }
-		  epFound := FindEpsForSvc(epsList, svcName, svcNs)
-		  err = c.CreateModifyEndpoints(svc, epFound, matchingDesList)
-      if err != nil {
-        if strings.Contains(err.Error(), datastructs.OptimisticLockErrorMsg) {
-          time.Sleep(RetryInterval * time.Millisecond)
-          continue
-        } else {
-          glog.Errorf("Endpoint creation for new Service:%s failed with error:%s", svcName, err)
-        }
-      }
-      break
-    }
+		for i := 0; i < MaxUpdateRetry; i++ {
+			depNamespaceLister := c.danmepLister.DanmEps(svcNs)
+			desList, err := depNamespaceLister.List(labels.Everything())
+			if err != nil {
+				glog.Errorf("addSvc: get danmep %s", err)
+				return
+			}
+			matchingDesList := SelectDesMatchLabels(desList, selectorMap, svcNets, svcNs)
+			epNamespaceLister := c.epsLister.Endpoints(svcNs)
+			epsList, err := epNamespaceLister.List(labels.Everything())
+			if err != nil {
+				glog.Errorf("addSvc: get eps %s", err)
+				return
+			}
+			epFound := FindEpsForSvc(epsList, svcName, svcNs)
+			err = c.CreateModifyEndpoints(svc, epFound, matchingDesList)
+			if err != nil {
+				if strings.Contains(err.Error(), datastructs.OptimisticLockErrorMsg) {
+					time.Sleep(RetryInterval * time.Millisecond)
+					continue
+				} else {
+					glog.Errorf("Endpoint creation for new Service:%s failed with error:%s", svcName, err)
+				}
+			}
+			break
+		}
 	}
 }
 
@@ -628,42 +637,42 @@ func (c *Controller) updateSvc(old, new interface{}) {
 }
 
 func isIpInEp(ip string, eps *corev1.Endpoints) bool {
-  var isIpPresent bool
-    for _, a := range eps.Subsets[0].Addresses {
-      if a.IP == ip {
-      isIpPresent = true
-      break
-    }
-  }
-  return isIpPresent
+	var isIpPresent bool
+	for _, a := range eps.Subsets[0].Addresses {
+		if a.IP == ip {
+			isIpPresent = true
+			break
+		}
+	}
+	return isIpPresent
 }
 
 func createChangedEpAddressList(v4Address, v6Address string, pod *corev1.Pod, eps *corev1.Endpoints, targetRef *corev1.ObjectReference, epAddrs []corev1.EndpointAddress) []corev1.EndpointAddress {
-  if (v4Address != "" && v4Address != ipam.NoneAllocType &&  v4Address != ipam.DynamicAllocType) &&
-     (eps == nil || !isIpInEp(v4Address, eps)) {
-    epAddrs = append(epAddrs, corev1.EndpointAddress{IP: v4Address, Hostname: pod.Spec.Hostname, NodeName: &pod.Spec.NodeName, TargetRef: targetRef})
-  }
-  if (v6Address != "" && v6Address != ipam.NoneAllocType &&  v6Address != ipam.DynamicAllocType) &&
-     (eps == nil || !isIpInEp(v6Address, eps)) {
-    epAddrs = append(epAddrs, corev1.EndpointAddress{IP: v6Address, Hostname: pod.Spec.Hostname, NodeName: &pod.Spec.NodeName, TargetRef: targetRef})
-  }
-  return epAddrs
+	if (v4Address != "" && v4Address != ipam.NoneAllocType && v4Address != ipam.DynamicAllocType) &&
+		(eps == nil || !isIpInEp(v4Address, eps)) {
+		epAddrs = append(epAddrs, corev1.EndpointAddress{IP: v4Address, Hostname: pod.Spec.Hostname, NodeName: &pod.Spec.NodeName, TargetRef: targetRef})
+	}
+	if (v6Address != "" && v6Address != ipam.NoneAllocType && v6Address != ipam.DynamicAllocType) &&
+		(eps == nil || !isIpInEp(v6Address, eps)) {
+		epAddrs = append(epAddrs, corev1.EndpointAddress{IP: v6Address, Hostname: pod.Spec.Hostname, NodeName: &pod.Spec.NodeName, TargetRef: targetRef})
+	}
+	return epAddrs
 }
 
-func getIpsFromDanmEp(de *danmv1.DanmEp) (string,string) {
-  var ipAddr, ip6Addr string
-  if de.Spec.Iface.Address != "" {
-    ipAddr = strings.Split(de.Spec.Iface.Address, "/")[0]
-  }
-  if de.Spec.Iface.AddressIPv6 != "" {
-    ip6Addr = strings.Split(de.Spec.Iface.AddressIPv6, "/")[0]
-  }
-  return ipAddr, ip6Addr
+func getIpsFromDanmEp(de *danmv1.DanmEp) (string, string) {
+	var ipAddr, ip6Addr string
+	if de.Spec.Iface.Address != "" {
+		ipAddr = strings.Split(de.Spec.Iface.Address, "/")[0]
+	}
+	if de.Spec.Iface.AddressIPv6 != "" {
+		ip6Addr = strings.Split(de.Spec.Iface.AddressIPv6, "/")[0]
+	}
+	return ipAddr, ip6Addr
 }
 
 func deleteFromEpAddressList(v4Address, v6Address string, index int, address corev1.EndpointAddress, epAddrs []corev1.EndpointAddress) []corev1.EndpointAddress {
-  if v4Address == address.IP || v6Address == address.IP {
-    epAddrs = append(epAddrs[:index], epAddrs[index+1:]...)
-  }
-  return epAddrs
+	if v4Address == address.IP || v6Address == address.IP {
+		epAddrs = append(epAddrs[:index], epAddrs[index+1:]...)
+	}
+	return epAddrs
 }

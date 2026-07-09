@@ -43,7 +43,7 @@ webhooks:
         path: "/netvalidation"
       caBundle: {{ base64Encode (getenv "KUBERNETES_CA_CERTIFICATE") }}
     rules:
-      # UPDATE IS TEMPORARILY REMOVED DUE TO:https://github.com/nokia/danm/issues/144
+      # UPDATE IS TEMPORARILY REMOVED DUE TO:https://github.com/danm-cni/danm/issues/144
       - operations: ["CREATE"]
         apiGroups: ["danm.io"]
         apiVersions: ["v1"]

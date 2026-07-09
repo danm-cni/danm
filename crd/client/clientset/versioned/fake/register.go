@@ -19,7 +19,7 @@ limitations under the License.
 package fake
 
 import (
-	danmv1 "github.com/nokia/danm/crd/apis/danm/v1"
+	danmv1 "github.com/danm-cni/danm/crd/apis/danm/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -37,14 +37,14 @@ var localSchemeBuilder = runtime.SchemeBuilder{
 // AddToScheme adds all types of this clientset into the given scheme. This allows composition
 // of clientsets, like in:
 //
-//   import (
-//     "k8s.io/client-go/kubernetes"
-//     clientsetscheme "k8s.io/client-go/kubernetes/scheme"
-//     aggregatorclientsetscheme "k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset/scheme"
-//   )
+//	import (
+//	  "k8s.io/client-go/kubernetes"
+//	  clientsetscheme "k8s.io/client-go/kubernetes/scheme"
+//	  aggregatorclientsetscheme "k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset/scheme"
+//	)
 //
-//   kclientset, _ := kubernetes.NewForConfig(c)
-//   _ = aggregatorclientsetscheme.AddToScheme(clientsetscheme.Scheme)
+//	kclientset, _ := kubernetes.NewForConfig(c)
+//	_ = aggregatorclientsetscheme.AddToScheme(clientsetscheme.Scheme)
 //
 // After this, RawExtensions in Kubernetes types will serialize kube-aggregator types
 // correctly.

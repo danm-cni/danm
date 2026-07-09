@@ -21,7 +21,7 @@ package versioned
 import (
 	"fmt"
 
-	k8scnicncfiov1 "github.com/nokia/danm/crd/client/nad/clientset/versioned/typed/k8s.cni.cncf.io/v1"
+	k8scnicncfiov1 "github.com/danm-cni/danm/crd/client/nad/clientset/versioned/typed/k8s.cni.cncf.io/v1"
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
 	flowcontrol "k8s.io/client-go/util/flowcontrol"

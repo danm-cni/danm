@@ -1,10 +1,10 @@
 package v1
 
 import (
+	"github.com/danm-cni/danm/crd/apis/danm"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"github.com/nokia/danm/crd/apis/danm"
 )
 
 // SchemeGroupVersion is group version used to register these objects

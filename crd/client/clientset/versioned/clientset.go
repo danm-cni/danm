@@ -21,7 +21,7 @@ package versioned
 import (
 	"fmt"
 
-	danmv1 "github.com/nokia/danm/crd/client/clientset/versioned/typed/danm/v1"
+	danmv1 "github.com/danm-cni/danm/crd/client/clientset/versioned/typed/danm/v1"
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
 	flowcontrol "k8s.io/client-go/util/flowcontrol"

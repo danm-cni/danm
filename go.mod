@@ -1,5 +1,4 @@
-module github.com/nokia/danm
-
+module github.com/danm-cni/danm
 go 1.13
 
 require (
