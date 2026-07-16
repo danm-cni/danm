@@ -18,7 +18,7 @@ import (
 	nadclientset "github.com/danm-cni/danm/crd/client/nad/clientset/versioned"
 	nadinformers "github.com/danm-cni/danm/crd/client/nad/informers/externalversions"
 	"github.com/danm-cni/danm/pkg/datastructs"
-	multustypes "gopkg.in/k8snetworkplumbingwg/multus-cni.v3/pkg/types"
+	multustypes "gopkg.in/k8snetworkplumbingwg/multus-cni.v4/pkg/types"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"

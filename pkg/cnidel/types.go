@@ -3,7 +3,7 @@ package cnidel
 import (
 	"github.com/containernetworking/cni/pkg/types"
 	"github.com/danm-cni/danm/pkg/datastructs"
-	sriov_types "github.com/intel/sriov-cni/pkg/types"
+	sriov_types "github.com/k8snetworkplumbingwg/sriov-cni/pkg/types"
 )
 
 var (

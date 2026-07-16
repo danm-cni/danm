@@ -25,6 +25,10 @@ import (
 	"k8s.io/client-go/transport"
 )
 
+const (
+	EndpointsResourceLock = "endpoints"
+)
+
 var (
 	kubeconfig, version, commitHash string
 )
@@ -71,7 +75,7 @@ func main() {
 			glog.Fatalf("Error running controller: %s", err.Error())
 		}
 	}
-	rl, err := resourcelock.New(resourcelock.EndpointsResourceLock,
+	rl, err := resourcelock.New(EndpointsResourceLock,
 		"kube-system",
 		"danm-svc-controller",
 		kubeClient.CoreV1(),

@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -12,7 +11,7 @@ import (
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
 	types020 "github.com/containernetworking/cni/pkg/types/020"
-	"github.com/containernetworking/cni/pkg/types/current"
+	current "github.com/containernetworking/cni/pkg/types/040"
 	"github.com/danm-cni/danm/pkg/cnidel"
 	"github.com/danm-cni/danm/pkg/datastructs"
 	"github.com/danm-cni/danm/pkg/metacni"
@@ -59,7 +58,7 @@ type FlannelDelegate struct {
 
 func testSetup(args *skel.CmdArgs) error {
 	var tcConf TestConfig
-	expectedCniConf, err := ioutil.ReadFile(cniTestConfigFile)
+	expectedCniConf, err := os.ReadFile(cniTestConfigFile)
 	if err != nil {
 		return errors.New("could not read expected CNI config from disk, because:" + err.Error())
 	}
@@ -207,7 +206,7 @@ func addIpToType20(ip string, version int, cniRes *types020.Result) {
 
 func testDelete(args *skel.CmdArgs) error {
 	var tcConf TestConfig
-	expectedCniConf, err := ioutil.ReadFile(cniTestConfigFile)
+	expectedCniConf, err := os.ReadFile(cniTestConfigFile)
 	if err != nil {
 		return errors.New("DEL could not read expected CNI config from disk, because:" + err.Error())
 	}

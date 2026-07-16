@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/containernetworking/cni/pkg/types/current"
+	current "github.com/containernetworking/cni/pkg/types/040"
 	"github.com/danm-cni/danm/pkg/syncher"
 )
 

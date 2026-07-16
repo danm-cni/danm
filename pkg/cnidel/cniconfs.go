@@ -3,19 +3,19 @@ package cnidel
 import (
 	"encoding/json"
 	"errors"
-	"io/ioutil"
+	"os"
 
 	danmtypes "github.com/danm-cni/danm/crd/apis/danm/v1"
 	"github.com/danm-cni/danm/pkg/datastructs"
 	"github.com/danm-cni/danm/pkg/netcontrol"
-	sriov_utils "github.com/intel/sriov-cni/pkg/utils"
+	sriov_utils "github.com/k8snetworkplumbingwg/sriov-cni/pkg/utils"
 )
 
 // This function creates CNI configuration for all static-level backends
 // The CNI binary matching with NetowrkType is invoked with the CNI config file matching with NetworkID parameter
 func readCniConfigFile(cniconfDir string, netInfo *danmtypes.DanmNet, ipamOptions datastructs.IpamConfig) ([]byte, error) {
 	cniConfig := netInfo.Spec.NetworkID
-	rawConfig, err := ioutil.ReadFile(cniconfDir + "/" + cniConfig + ".conf")
+	rawConfig, err := os.ReadFile(cniconfDir + "/" + cniConfig + ".conf")
 	if err != nil {
 		return nil, errors.New("Could not load CNI config file: " + cniConfig + ".conf for plugin:" + netInfo.Spec.NetworkType + " from directory:" + cniconfDir)
 	}
@@ -41,7 +41,7 @@ func getSriovCniConfig(netInfo *danmtypes.DanmNet, ipamOptions datastructs.IpamC
 		return nil, errors.New("failed to get the name of the sriov PF for device " + ep.Spec.Iface.DeviceID + " due to:" + err.Error())
 	}
 	sriovConfig.Master = pfname
-	sriovConfig.Vlan = netInfo.Spec.Options.Vlan
+	sriovConfig.Vlan = &netInfo.Spec.Options.Vlan
 	sriovConfig.DeviceID = ep.Spec.Iface.DeviceID
 	if len(ipamOptions.Ips) > 0 {
 		sriovConfig.Ipam = ipamOptions

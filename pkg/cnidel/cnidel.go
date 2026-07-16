@@ -10,7 +10,7 @@ import (
 
 	"github.com/containernetworking/cni/pkg/invoke"
 	"github.com/containernetworking/cni/pkg/types"
-	"github.com/containernetworking/cni/pkg/types/current"
+	current "github.com/containernetworking/cni/pkg/types/040"
 	"github.com/containernetworking/cni/pkg/version"
 	danmtypes "github.com/danm-cni/danm/crd/apis/danm/v1"
 	"github.com/danm-cni/danm/pkg/datastructs"

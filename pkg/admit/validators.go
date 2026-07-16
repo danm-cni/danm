@@ -11,7 +11,7 @@ import (
 	"github.com/danm-cni/danm/pkg/datastructs"
 	"github.com/danm-cni/danm/pkg/ipam"
 	admissionv1 "k8s.io/api/admission/v1beta1"
-	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
+	"k8s.io/utils/cpuset"
 )
 
 const (
@@ -31,6 +31,18 @@ var (
 
 type ValidatorFunc func(oldManifest, newManifest *danmtypes.DanmNet, opType admissionv1.Operation, client danmclientset.Interface) error
 type ValidatorMapping []ValidatorFunc
+
+func filterVnis(origSet cpuset.CPUSet) cpuset.CPUSet {
+	var newSet string
+	origIds := origSet.List()
+	for cpu := range origIds {
+		if cpu > MaxAllowedVni {
+			newSet = newSet + "," + string(cpu)
+		}
+	}
+	finalVnis, _ := cpuset.Parse(newSet)
+	return finalVnis
+}
 
 func validateIpv4Fields(oldManifest, newManifest *danmtypes.DanmNet, opType admissionv1.Operation, client danmclientset.Interface) error {
 	return validateIpFields(newManifest.Spec.Options.Cidr, newManifest.Spec.Options.Routes)
@@ -230,9 +242,7 @@ func validateIfaceConfig(ifaceConf danmtypes.IfaceProfile, opType admissionv1.Op
 	if err != nil {
 		return errors.New("vniRange for interface:" + ifaceConf.Name + " must be improperly formatted because its parsing fails with:" + err.Error())
 	}
-	filteredSet := vniSet.Filter(func(vni int) bool {
-		return vni > MaxAllowedVni
-	})
+	filteredSet := filterVnis(vniSet)
 	if filteredSet.Size() > 0 {
 		return errors.New("vniRange for interface:" + ifaceConf.Name + " is invalid, because it cannot contain VNIs over the maximum supported number that is:" + strconv.Itoa(MaxAllowedVni))
 	}

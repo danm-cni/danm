@@ -18,7 +18,7 @@ import (
 	"github.com/danm-cni/danm/pkg/datastructs"
 	"github.com/danm-cni/danm/pkg/ipam"
 	"github.com/danm-cni/danm/pkg/netcontrol"
-	sriov_utils "github.com/intel/sriov-cni/pkg/utils"
+	sriov_utils "github.com/k8snetworkplumbingwg/sriov-cni/pkg/utils"
 	uuid "github.com/satori/go.uuid"
 	"github.com/vishvananda/netlink"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"

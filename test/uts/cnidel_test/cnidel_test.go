@@ -11,7 +11,7 @@ import (
 	"github.com/danm-cni/danm/pkg/cnidel"
 	"github.com/danm-cni/danm/pkg/datastructs"
 	"github.com/danm-cni/danm/test/utils"
-	sriov_utils "github.com/intel/sriov-cni/pkg/utils"
+	sriov_utils "github.com/k8snetworkplumbingwg/sriov-cni/pkg/utils"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 

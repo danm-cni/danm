@@ -11,7 +11,7 @@ import (
 	"github.com/danm-cni/danm/pkg/bitarray"
 	"github.com/danm-cni/danm/pkg/datastructs"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
+	"k8s.io/utils/cpuset"
 )
 
 const (
@@ -63,7 +63,7 @@ func reserveVni(iface danmtypes.IfaceProfile) (int, string, error) {
 		return 0, "", errors.New("vniRange for interface:" + iface.Name + " cannot be parsed because:" + err.Error())
 	}
 	chosenVni := -1
-	vniSet := vnis.ToSlice()
+	vniSet := vnis.List()
 	for _, vni := range vniSet {
 		if allocs.Get(uint32(vni)) {
 			continue
