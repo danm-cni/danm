@@ -49,57 +49,57 @@ spec:
                     type: string
                   allocation_pool:
                     description: subset of the IPv4 subnet from which IPs can be allocated
+                    type: object
                     properties:
                       end:
                         type: string
+                        oneOf:
+                        - maxLength: 0
+                        - format: ipv4
                       lastIp:
                         type: string
+                        oneOf:
+                        - maxLength: 0
+                        - format: cidr
+                          pattern: ^\d+\.
                       start:
                         type: string
-                    type: object
-                    oneOf:
-                    - properties:
-                        start:
-                          format: ipv4
-                          maxLength: 0
-                        end:
-                          format: ipv4
-                          maxLength: 0
-                        lastIp:
-                          maxLength: 0
-                          format: cidr
-                          pattern: '^\d+\.'
+                        oneOf:
+                        - maxLength: 0
+                        - format: ipv4
                   allocation_pool_v6:
                     description: subset of the IPv6 subnet from which IPs can be allocated
+                    type: object
                     properties:
                       end:
                         type: string
+                        oneOf:
+                        - maxLength: 0
+                        - format: ipv6
                       lastIp:
                         type: string
+                        oneOf:
+                        - maxLength: 0
+                        - format: cidr
+                          pattern: ':'
                       start:
                         type: string
+                        oneOf:
+                        - maxLength: 0
+                        - format: ipv6
                       cidr:
                         type: string
-                    type: object
-                    oneOf:
-                    - properties:
-                        start:
-                          format: ipv6
-                          maxLength: 0
-                        end:
-                          format: ipv6
-                          maxLength: 0
-                        lastIp:
-                          maxLength: 0
-                          format: cidr
-                          pattern: ':'
-                        cidr:
-                          maxLength: 0
-                          format: cidr
+                        oneOf:
+                        - maxLength: 0
+                        - format: cidr
                           pattern: ':'
                   cidr:
                     description: IPv4 specific parameters IPv4 network address
                     type: string
+                    oneOf:
+                    - maxLength: 0
+                    - format: cidr
+                      pattern: ^\d+\.
                   container_prefix:
                     description: The name of the interface in the container
                     type: string
@@ -110,9 +110,12 @@ spec:
                     description: The device to where the network is attached
                     type: string
                   net6:
-                    description: IPv6 specific parameters IPv6 unique global address
-                      prefix
+                    description: IPv6 specific parameters IPv6 unique global address prefix
                     type: string
+                    oneOf:
+                    - maxLength: 0
+                    - format: cidr
+                      pattern: ':'
                   routes:
                     additionalProperties:
                       type: string
@@ -144,23 +147,12 @@ spec:
                     minimum: 1
                     maximum: 16777214
                 type: object
-                oneOf:
-                - properties:
-                    cidr:
-                      format: cidr
-                      pattern: '^\d+\.'
-                      maxLength: 0
-                    net6:
-                      maxLength: 0
-                      format: cidr
-                      pattern: ':'
+            required:
+            - NetworkID
             type: object
+        required:
+        - metadata
+        - spec
         type: object
     served: true
     storage: true
-status:
-  acceptedNames:
-    kind: ""
-    plural: ""
-  conditions: []
-  storedVersions: []

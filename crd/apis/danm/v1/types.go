@@ -94,11 +94,11 @@ type DanmEpSpec struct {
 
 type DanmEpIface struct {
 	Name        string            `json:"Name"`
-	Address     string            `json:"Address"`
-	AddressIPv6 string            `json:"AddressIPv6"`
-	MacAddress  string            `json:"MacAddress"`
-	Proutes     map[string]string `json:"proutes"`
-	Proutes6    map[string]string `json:"proutes6"`
+	Address     string            `json:"Address,omitempty"`
+	AddressIPv6 string            `json:"AddressIPv6,omitempty"`
+	MacAddress  string            `json:"MacAddress,omitempty"`
+	Proutes     map[string]string `json:"proutes,omitempty"`
+	Proutes6    map[string]string `json:"proutes6,omitempty"`
 	DeviceID    string            `json:"DeviceID,omitempty"`
 }
 
