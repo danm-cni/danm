@@ -170,6 +170,7 @@ func addRouteForLink(routes map[string]string, allocatedIp string, rtable int, l
 	if routes == nil || allocatedIp == "" || allocatedIp == ipam.NoneAllocType {
 		return nil
 	}
+	ipAllocatedIp, _, _ := net.ParseCIDR(allocatedIp)
 	for key, value := range routes {
 		_, ipnet, err := net.ParseCIDR(key)
 		if err != nil {
@@ -177,8 +178,9 @@ func addRouteForLink(routes map[string]string, allocatedIp string, rtable int, l
 			continue
 		}
 		ip := net.ParseIP(value)
-		if ip == nil {
-			//Bad gateway in IP route, ignoring the route
+		if ip == nil || value == ipAllocatedIp.String() {
+			//GW IP in the route is either malformed, or matching the allocated Pod IP meaning we are inside the GW Pod itself
+			//Ignoring the route either way
 			continue
 		}
 		route := netlink.Route{

@@ -13,21 +13,24 @@ import (
 )
 
 var testNets = []danmtypes.DanmNet{
-	danmtypes.DanmNet{ObjectMeta: meta_v1.ObjectMeta{Name: "l2"}, Spec: danmtypes.DanmNetSpec{NetworkID: "l2"}},
-	danmtypes.DanmNet{ObjectMeta: meta_v1.ObjectMeta{Name: "cidr"}, Spec: danmtypes.DanmNetSpec{NetworkID: "cidr", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26"}}},
-	danmtypes.DanmNet{ObjectMeta: meta_v1.ObjectMeta{Name: "fullIpv4"}, Spec: danmtypes.DanmNetSpec{NetworkID: "fullIpv4", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.0/30"}}},
-	danmtypes.DanmNet{ObjectMeta: meta_v1.ObjectMeta{Name: "net6"}, Spec: danmtypes.DanmNetSpec{NetworkID: "net6", Options: danmtypes.DanmNetOption{Net6: "2a00:8a00:a000:1193::/64", Cidr: "192.168.1.64/26"}}},
-	danmtypes.DanmNet{ObjectMeta: meta_v1.ObjectMeta{Name: "smallNet6"}, Spec: danmtypes.DanmNetSpec{NetworkID: "smallNet6", Options: danmtypes.DanmNetOption{Net6: "2a00:8a00:a000:1193::/120"}}},
-	danmtypes.DanmNet{ObjectMeta: meta_v1.ObjectMeta{Name: "conflict"}, Spec: danmtypes.DanmNetSpec{NetworkID: "conflict", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26"}}},
-	danmtypes.DanmNet{ObjectMeta: meta_v1.ObjectMeta{Name: "conflicterror"}, Spec: danmtypes.DanmNetSpec{NetworkID: "conflicterror", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26"}}},
-	danmtypes.DanmNet{ObjectMeta: meta_v1.ObjectMeta{Name: "fullconflictFree"}, Spec: danmtypes.DanmNetSpec{NetworkID: "fullconflictFree", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26"}}},
-	danmtypes.DanmNet{ObjectMeta: meta_v1.ObjectMeta{Name: "fullconflicterrorFree"}, Spec: danmtypes.DanmNetSpec{NetworkID: "fullconflicterrorFree", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26"}}},
-	danmtypes.DanmNet{ObjectMeta: meta_v1.ObjectMeta{Name: "fullerror"}, Spec: danmtypes.DanmNetSpec{NetworkID: "error", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26"}}},
-	danmtypes.DanmNet{ObjectMeta: meta_v1.ObjectMeta{Name: "error"}, Spec: danmtypes.DanmNetSpec{NetworkID: "error", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26"}}},
-	danmtypes.DanmNet{ObjectMeta: meta_v1.ObjectMeta{Name: "staticFirst"}, Spec: danmtypes.DanmNetSpec{NetworkID: "cidr", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26"}}},
-	danmtypes.DanmNet{ObjectMeta: meta_v1.ObjectMeta{Name: "fullinitv6"}, Spec: danmtypes.DanmNetSpec{NetworkID: "net6", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26", Net6: "2a00:8a00:a000:1193::/64"}}},
-	danmtypes.DanmNet{ObjectMeta: meta_v1.ObjectMeta{Name: "v4RestrictedPool"}, Spec: danmtypes.DanmNetSpec{NetworkID: "v4RestrictedPool", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26", Pool: danmtypes.IpPool{Start: "192.168.1.70", End: "192.168.1.80"}}}},
-	danmtypes.DanmNet{ObjectMeta: meta_v1.ObjectMeta{Name: "v4RestrictedPoolWithLastIp"}, Spec: danmtypes.DanmNetSpec{NetworkID: "v4RestrictedPoolWithLastIp", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26", Pool: danmtypes.IpPool{Start: "192.168.1.70", End: "192.168.1.80", LastIp: "192.168.1.80"}}}},
+	{ObjectMeta: meta_v1.ObjectMeta{Name: "l2"}, Spec: danmtypes.DanmNetSpec{NetworkID: "l2"}},
+	{ObjectMeta: meta_v1.ObjectMeta{Name: "cidr"}, Spec: danmtypes.DanmNetSpec{NetworkID: "cidr", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26"}}},
+	{ObjectMeta: meta_v1.ObjectMeta{Name: "fullIpv4"}, Spec: danmtypes.DanmNetSpec{NetworkID: "fullIpv4", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.0/30"}}},
+	{ObjectMeta: meta_v1.ObjectMeta{Name: "net6"}, Spec: danmtypes.DanmNetSpec{NetworkID: "net6", Options: danmtypes.DanmNetOption{Net6: "2a00:8a00:a000:1193::/64", Cidr: "192.168.1.64/26"}}},
+	{ObjectMeta: meta_v1.ObjectMeta{Name: "smallNet6"}, Spec: danmtypes.DanmNetSpec{NetworkID: "smallNet6", Options: danmtypes.DanmNetOption{Net6: "2a00:8a00:a000:1193::/120"}}},
+	{ObjectMeta: meta_v1.ObjectMeta{Name: "conflict"}, Spec: danmtypes.DanmNetSpec{NetworkID: "conflict", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26"}}},
+	{ObjectMeta: meta_v1.ObjectMeta{Name: "conflicterror"}, Spec: danmtypes.DanmNetSpec{NetworkID: "conflicterror", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26"}}},
+	{ObjectMeta: meta_v1.ObjectMeta{Name: "fullconflictFree"}, Spec: danmtypes.DanmNetSpec{NetworkID: "fullconflictFree", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26"}}},
+	{ObjectMeta: meta_v1.ObjectMeta{Name: "fullconflicterrorFree"}, Spec: danmtypes.DanmNetSpec{NetworkID: "fullconflicterrorFree", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26"}}},
+	{ObjectMeta: meta_v1.ObjectMeta{Name: "fullerror"}, Spec: danmtypes.DanmNetSpec{NetworkID: "error", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26"}}},
+	{ObjectMeta: meta_v1.ObjectMeta{Name: "error"}, Spec: danmtypes.DanmNetSpec{NetworkID: "error", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26"}}},
+	{ObjectMeta: meta_v1.ObjectMeta{Name: "staticFirst"}, Spec: danmtypes.DanmNetSpec{NetworkID: "cidr", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26"}}},
+	{ObjectMeta: meta_v1.ObjectMeta{Name: "fullinitv6"}, Spec: danmtypes.DanmNetSpec{NetworkID: "net6", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26", Net6: "2a00:8a00:a000:1193::/64"}}},
+	{ObjectMeta: meta_v1.ObjectMeta{Name: "v4RestrictedPool"}, Spec: danmtypes.DanmNetSpec{NetworkID: "v4RestrictedPool", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26", Pool: danmtypes.IpPool{Start: "192.168.1.70", End: "192.168.1.80"}}}},
+	{ObjectMeta: meta_v1.ObjectMeta{Name: "v4RestrictedPoolWithLastIp"}, Spec: danmtypes.DanmNetSpec{NetworkID: "v4RestrictedPoolWithLastIp", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26", Pool: danmtypes.IpPool{Start: "192.168.1.70", End: "192.168.1.80", LastIp: "192.168.1.80"}}}},
+	{ObjectMeta: meta_v1.ObjectMeta{Name: "nogws"}, Spec: danmtypes.DanmNetSpec{NetworkID: "nogws", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26", Net6: "2a00:8a00:a000:1193::/64"}}},
+	{ObjectMeta: meta_v1.ObjectMeta{Name: "gws"}, Spec: danmtypes.DanmNetSpec{NetworkID: "gws", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26", Net6: "2a00:8a00:a000:1193::/64", Routes: map[string]string{"10.20.20.0/24": "192.168.1.65"}, Routes6: map[string]string{"2a00:8a00:a000:1194:/64": "2a00:8a00:a000:1193::1"}}}},
+	{ObjectMeta: meta_v1.ObjectMeta{Name: "fullinitv6Gws"}, Spec: danmtypes.DanmNetSpec{NetworkID: "gwsReserved", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26", Net6: "2a00:8a00:a000:1193::/64", Routes: map[string]string{"10.20.20.0/24": "192.168.1.65"}, Routes6: map[string]string{"2a00:8a00:a000:1194:/64": "2a00:8a00:a000:1193::1"}}}},
 }
 
 var reserveTcs = []struct {
@@ -71,6 +74,14 @@ var reserveTcs = []struct {
 	{"errorUpdate", 10, "dynamic", "", "", "", true, 1},
 	{"dyanmicV4FromAllocationPool", 13, "dynamic", "", "192.168.1.70/26", "", false, 1},
 	{"dyanmicV4FromAllocationPoolWithLastIpSet", 14, "dynamic", "", "192.168.1.70/26", "", false, 1},
+	{"dyanmicV4FirstIpIsNotAGw", 15, "dynamic", "", "192.168.1.65/26", "", false, 1},
+	{"dyanmicV6FirstIpIsNotAGw", 15, "", "dynamic", "", "2a00:8a00:a000:1193::1/64", false, 1},
+	{"dyanmicV4FirstIpIsGw", 16, "dynamic", "", "192.168.1.66/26", "", false, 1},
+	{"dyanmicV6FirstIpIsGw", 16, "", "dynamic", "", "2a00:8a00:a000:1193::2/64", false, 1},
+	{"staticV4GwSuccess", 16, "192.168.1.65/26", "", "192.168.1.65/26", "", false, 1},
+	{"staticV6GwSuccess", 16, "", "2a00:8a00:a000:1193::1", "", "2a00:8a00:a000:1193::1/64", false, 1},
+	{"staticV4GwFailIpReserved", 17, "192.168.1.65/26", "", "", "", true, 0},
+	{"staticV6GwFailIpReserved", 17, "", "2a00:8a00:a000:1193::1", "", "", true, 0},
 }
 
 var freeTcs = []struct {

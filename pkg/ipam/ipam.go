@@ -24,7 +24,7 @@ const (
 )
 
 // Reserve inspects the network object received as an input, and allocates an IPv4 or IPv6 address from the appropriate allocation pool
-// In case static IP allocation is requested, it will try reserver the requested error. If it is not possible, it returns an error
+// In case static IP allocation is requested, it will try to reserve the requested address. If it is not possible, it returns an error
 // The reserved IP addresses are represented by setting a bit in the network's BitArray type allocation matrices
 // The refreshed network object is modified in the K8s API server at the end
 func Reserve(danmClient danmclientset.Interface, netInfo danmtypes.DanmNet, req4, req6 string) (string, string, error) {
@@ -89,7 +89,7 @@ func allocateIps(netInfo *danmtypes.DanmNet, req4, req6 string) (string, string,
 	ip6 := ""
 	var err error
 	if req4 != "" {
-		netInfo.Spec.Options.Alloc, ip4, err = allocateAddress(&netInfo.Spec.Options.Pool, netInfo.Spec.Options.Alloc, req4, netInfo.Spec.Options.Cidr, netInfo.Spec.Options.Cidr)
+		netInfo.Spec.Options.Alloc, ip4, err = allocateAddress(&netInfo.Spec.Options.Pool, netInfo.Spec.Options.Alloc, req4, netInfo.Spec.Options.Cidr, netInfo.Spec.Options.Cidr, netInfo.Spec.Options.Routes)
 		if err != nil {
 			return "", "", err
 		}
@@ -100,7 +100,7 @@ func allocateIps(netInfo *danmtypes.DanmNet, req4, req6 string) (string, string,
 		}
 		//TODO: to have a real uniform handling both V4 and V6 pool definition should be uniform, meaning, V4 pools should also have a separare allocation CIDR
 		tempPool6 := danmtypes.IpPool{Start: netInfo.Spec.Options.Pool6.Start, End: netInfo.Spec.Options.Pool6.End, LastIp: netInfo.Spec.Options.Pool6.LastIp}
-		netInfo.Spec.Options.Alloc6, ip6, err = allocateAddress(&tempPool6, netInfo.Spec.Options.Alloc6, req6, netInfo.Spec.Options.Pool6.Cidr, netInfo.Spec.Options.Net6)
+		netInfo.Spec.Options.Alloc6, ip6, err = allocateAddress(&tempPool6, netInfo.Spec.Options.Alloc6, req6, netInfo.Spec.Options.Pool6.Cidr, netInfo.Spec.Options.Net6, netInfo.Spec.Options.Routes6)
 		if err != nil {
 			return "", "", err
 		}
@@ -115,7 +115,7 @@ func InitV6AllocFields(netInfo *danmtypes.DanmNet) {
 		InitAllocPool(netInfo.Spec.Options.Pool6.Cidr, netInfo.Spec.Options.Pool6.Start, netInfo.Spec.Options.Pool6.End, netInfo.Spec.Options.Alloc6, netInfo.Spec.Options.Routes6)
 }
 
-func allocateAddress(pool *danmtypes.IpPool, alloc, reqType, allocCidr, netCidr string) (string, string, error) {
+func allocateAddress(pool *danmtypes.IpPool, alloc, reqType, allocCidr, netCidr string, routes map[string]string) (string, string, error) {
 	if reqType == NoneAllocType {
 		return alloc, NoneAllocType, nil
 	}
@@ -139,7 +139,7 @@ func allocateAddress(pool *danmtypes.IpPool, alloc, reqType, allocCidr, netCidr 
 		var doesAnyFreeIpExist bool
 		var allocatedIndex uint32
 		for i := lastIpIndex; i <= end; i++ {
-			if !ba.Get(i) {
+			if !ba.Get(i) && !isIpAGwIp(i, routes, ba, allocSubnet) {
 				ba.Set(i)
 				allocatedIndex = i
 				doesAnyFreeIpExist = true
@@ -298,17 +298,17 @@ func Int2ip6(nn *big.Int) net.IP {
 
 func CreateAllocationArray(subnet *net.IPNet, routes map[string]string) string {
 	bitArray, _ := bitarray.CreateBitArrayFromIpnet(subnet)
-	reserveGatewayIps(routes, bitArray, subnet)
 	return bitArray.Encode()
 }
 
-func reserveGatewayIps(routes map[string]string, bitArray *bitarray.BitArray, subnet *net.IPNet) {
+func isIpAGwIp(ipPosition uint32, routes map[string]string, bitArray *bitarray.BitArray, subnet *net.IPNet) bool {
 	for _, gw := range routes {
 		gatewayPosition := GetIndexOfIp(net.ParseIP(gw), subnet)
-		if gatewayPosition <= bitArray.Len() {
-			bitArray.Set(gatewayPosition)
+		if gatewayPosition <= bitArray.Len() && gatewayPosition == ipPosition {
+			return true
 		}
 	}
+	return false
 }
 
 func DoV6CidrsIntersect(masterCidr, subCidr *net.IPNet) bool {
