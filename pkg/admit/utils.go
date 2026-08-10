@@ -102,3 +102,13 @@ func IsTypeDynamic(cniType string) bool {
 	}
 	return false
 }
+
+func getMaxAllowedVni(vniType string) int {
+	switch vniType {
+	case VniTypeVlan:
+		return MaxAllowedVniVlan
+	case VniTypeVxlan:
+		return MaxAllowedVniVxlan
+	}
+	return 0
+}
