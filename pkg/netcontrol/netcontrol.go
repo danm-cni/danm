@@ -21,7 +21,6 @@ import (
 	multustypes "gopkg.in/k8snetworkplumbingwg/multus-cni.v4/pkg/types"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -43,21 +42,23 @@ type NetWatcher struct {
 	NadClient     nadclientset.Interface
 	Controllers   map[string]cache.Controller
 	StopChan      *chan struct{}
+	Config        datastructs.NetwatcherConfig
 }
 
 // NewWatcher initializes and returns a new NetWatcher object
 // Upon the reception of a notification it performs host network management operations
 // Watcher stores all K8s Clients, Factories, and Informeres of the DANM network management APIs
-func NewWatcher(cfg *rest.Config, stopChan *chan struct{}) (*NetWatcher, error) {
+func NewWatcher(cfg datastructs.NetwatcherConfig, stopChan *chan struct{}) (*NetWatcher, error) {
 	netWatcher := &NetWatcher{
 		DanmFactories: make(map[string]danminformers.SharedInformerFactory),
 		DanmClients:   make(map[string]danmclientset.Interface),
 		Controllers:   make(map[string]cache.Controller),
 		StopChan:      stopChan,
+		Config:        cfg,
 	}
 	//this is how we test if the specific API is used within the cluster, or not
 	//we can only create an Informer for an existing API, otherwise we get errors
-	dnetClient, err := danmclientset.NewForConfig(cfg)
+	dnetClient, err := danmclientset.NewForConfig(cfg.RestConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +74,7 @@ func NewWatcher(cfg *rest.Config, stopChan *chan struct{}) (*NetWatcher, error) 
 			break
 		}
 	}
-	tnetClient, err := danmclientset.NewForConfig(cfg)
+	tnetClient, err := danmclientset.NewForConfig(cfg.RestConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +90,7 @@ func NewWatcher(cfg *rest.Config, stopChan *chan struct{}) (*NetWatcher, error) 
 			break
 		}
 	}
-	cnetClient, err := danmclientset.NewForConfig(cfg)
+	cnetClient, err := danmclientset.NewForConfig(cfg.RestConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +106,7 @@ func NewWatcher(cfg *rest.Config, stopChan *chan struct{}) (*NetWatcher, error) 
 			break
 		}
 	}
-	nadClient, err := nadclientset.NewForConfig(cfg)
+	nadClient, err := nadclientset.NewForConfig(cfg.RestConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -154,8 +155,8 @@ func (netWatcher *NetWatcher) createDnetInformer(dnetClient danmclientset.Interf
 	netWatcher.DanmFactories[DanmNetKind] = dnetInformerFactory
 	dnetController := dnetInformerFactory.Danm().V1().DanmNets().Informer()
 	dnetController.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    AddDanmNet,
-		UpdateFunc: UpdateDanmNet,
+		AddFunc:    netWatcher.AddDanmNet,
+		UpdateFunc: netWatcher.UpdateDanmNet,
 		DeleteFunc: DeleteDanmNet,
 	})
 	dnetController.SetWatchErrorHandler(netWatcher.WatchErrorHandler)
@@ -168,8 +169,8 @@ func (netWatcher *NetWatcher) createTnetInformer(tnetClient danmclientset.Interf
 	netWatcher.DanmFactories[TenantNetworkKind] = tnetInformerFactory
 	tnetController := tnetInformerFactory.Danm().V1().TenantNetworks().Informer()
 	tnetController.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    AddTenantNetwork,
-		UpdateFunc: UpdateTenantNetwork,
+		AddFunc:    netWatcher.AddTenantNetwork,
+		UpdateFunc: netWatcher.UpdateTenantNetwork,
 		DeleteFunc: DeleteTenantNetwork,
 	})
 	tnetController.SetWatchErrorHandler(netWatcher.WatchErrorHandler)
@@ -182,8 +183,8 @@ func (netWatcher *NetWatcher) createCnetInformer(cnetClient danmclientset.Interf
 	netWatcher.DanmFactories[ClusterNetworkKind] = cnetInformerFactory
 	cnetController := cnetInformerFactory.Danm().V1().ClusterNetworks().Informer()
 	cnetController.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    AddClusterNetwork,
-		UpdateFunc: UpdateClusterNetwork,
+		AddFunc:    netWatcher.AddClusterNetwork,
+		UpdateFunc: netWatcher.UpdateClusterNetwork,
 		DeleteFunc: DeleteClusterNetwork,
 	})
 	cnetController.SetWatchErrorHandler(netWatcher.WatchErrorHandler)
@@ -204,19 +205,19 @@ func (netWatcher *NetWatcher) createNadInformer(nadClient nadclientset.Interface
 	netWatcher.Controllers[NadKind] = nadController
 }
 
-func AddDanmNet(obj interface{}) {
+func (netWatcher *NetWatcher) AddDanmNet(obj interface{}) {
 	dn, isNetwork := obj.(*danmtypes.DanmNet)
 	if !isNetwork {
 		log.Println("ERROR: Can't create interfaces for DanmNet, 'cause we have received an invalid object from the K8s API server")
 		return
 	}
-	err := setupHost(dn)
+	err := setupHost(dn, netWatcher.Config.SourceLearning)
 	if err != nil {
 		log.Println("INFO: Creating host interfaces for DanmNet:" + dn.ObjectMeta.Name + " failed with error:" + err.Error())
 	}
 }
 
-func UpdateDanmNet(oldObj, newObj interface{}) {
+func (netWatcher *NetWatcher) UpdateDanmNet(oldObj, newObj interface{}) {
 	oldDn, isNetwork := oldObj.(*danmtypes.DanmNet)
 	if !isNetwork {
 		log.Println("ERROR: Can't update interfaces for DanmNet change, 'cause we have received an invalid old object from the K8s API server")
@@ -232,7 +233,7 @@ func UpdateDanmNet(oldObj, newObj interface{}) {
 	if err != nil {
 		log.Println("INFO: Deletion of old host interfaces for DanmNet:" + oldDn.ObjectMeta.Name + " after update failed with error:" + err.Error())
 	}
-	err = setupHost(newdDn)
+	err = setupHost(newdDn, netWatcher.Config.SourceLearning)
 	if err != nil {
 		log.Println("INFO: Creating host interfaces for new DanmNet:" + newdDn.ObjectMeta.Name + " after update failed with error:" + err.Error())
 	}
@@ -259,20 +260,20 @@ func DeleteDanmNet(obj interface{}) {
 	}
 }
 
-func AddTenantNetwork(obj interface{}) {
+func (netWatcher *NetWatcher) AddTenantNetwork(obj interface{}) {
 	tn, isNetwork := obj.(*danmtypes.TenantNetwork)
 	if !isNetwork {
 		log.Println("ERROR: Can't create interfaces for TenantNetwork, 'cause we have received an invalid object from the K8s API server")
 		return
 	}
 	dnet := ConvertTnetToDnet(tn)
-	err := setupHost(dnet)
+	err := setupHost(dnet, netWatcher.Config.SourceLearning)
 	if err != nil {
 		log.Println("INFO: Creating host interfaces for TenantNetwork:" + dnet.ObjectMeta.Name + " failed with error:" + err.Error())
 	}
 }
 
-func UpdateTenantNetwork(oldObj, newObj interface{}) {
+func (netWatcher *NetWatcher) UpdateTenantNetwork(oldObj, newObj interface{}) {
 	oldTn, isNetwork := oldObj.(*danmtypes.TenantNetwork)
 	if !isNetwork {
 		log.Println("ERROR: Can't update interfaces for TenantNetwork change, 'cause we have received an invalid old object from the K8s API server")
@@ -290,7 +291,7 @@ func UpdateTenantNetwork(oldObj, newObj interface{}) {
 	if err != nil {
 		log.Println("INFO: Deletion of old host interfaces for TenantNetwork:" + oldDn.ObjectMeta.Name + " after update failed with error:" + err.Error())
 	}
-	err = setupHost(newdDn)
+	err = setupHost(newdDn, netWatcher.Config.SourceLearning)
 	if err != nil {
 		log.Println("INFO: Creating host interfaces for new TenantNetwork:" + newdDn.ObjectMeta.Name + " after update failed with error:" + err.Error())
 	}
@@ -318,20 +319,20 @@ func DeleteTenantNetwork(obj interface{}) {
 	}
 }
 
-func AddClusterNetwork(obj interface{}) {
+func (netWatcher *NetWatcher) AddClusterNetwork(obj interface{}) {
 	cn, isNetwork := obj.(*danmtypes.ClusterNetwork)
 	if !isNetwork {
 		log.Println("ERROR: Can't create interfaces for ClusterNetwork, 'cause we have received an invalid object from the K8s API server")
 		return
 	}
 	dnet := ConvertCnetToDnet(cn)
-	err := setupHost(dnet)
+	err := setupHost(dnet, netWatcher.Config.SourceLearning)
 	if err != nil {
 		log.Println("INFO: Creating host interfaces for ClusterNetwork:" + dnet.ObjectMeta.Name + " failed with error:" + err.Error())
 	}
 }
 
-func UpdateClusterNetwork(oldObj, newObj interface{}) {
+func (netWatcher *NetWatcher) UpdateClusterNetwork(oldObj, newObj interface{}) {
 	oldCn, isNetwork := oldObj.(*danmtypes.ClusterNetwork)
 	if !isNetwork {
 		log.Println("ERROR: Can't update interfaces for ClusterNetwork change, 'cause we have received an invalid old object from the K8s API server")
@@ -349,7 +350,7 @@ func UpdateClusterNetwork(oldObj, newObj interface{}) {
 	if err != nil {
 		log.Println("INFO: Deletion of old host interfaces for ClusterNetwork:" + oldDn.ObjectMeta.Name + " after update failed with error:" + err.Error())
 	}
-	err = setupHost(newdDn)
+	err = setupHost(newdDn, netWatcher.Config.SourceLearning)
 	if err != nil {
 		log.Println("INFO: Creating host interfaces for new ClusterNetwork:" + newdDn.ObjectMeta.Name + " after update failed with error:" + err.Error())
 	}
@@ -388,7 +389,7 @@ func (netWatcher *NetWatcher) AddNad(obj interface{}) {
 		log.Println("INFO: Creating host interfaces for NetworkAttachmentDefinition:" + nad.ObjectMeta.Name + " failed with error:" + err.Error())
 		return
 	}
-	err = setupHost(dnet)
+	err = setupHost(dnet, netWatcher.Config.SourceLearning)
 	if err != nil {
 		log.Println("INFO: Creating host interfaces for NetworkAttachmentDefinition:" + nad.ObjectMeta.Name + " failed with error:" + err.Error())
 		return
@@ -432,7 +433,7 @@ func (netWatcher *NetWatcher) UpdateNad(oldObj, newObj interface{}) {
 	if err != nil {
 		log.Println("INFO: Deletion of old host interfaces for NetworkAttachmentDefinition:" + oldNad.ObjectMeta.Name + " after update failed with error:" + err.Error())
 	}
-	err = setupHost(newdDn)
+	err = setupHost(newdDn, netWatcher.Config.SourceLearning)
 	if err != nil {
 		log.Println("INFO: Creating host interfaces for modified NetworkAttachmentDefinition:" + newNad.ObjectMeta.Name + " after update failed with error:" + err.Error())
 	}

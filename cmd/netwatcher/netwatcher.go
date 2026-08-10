@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/danm-cni/danm/pkg/datastructs"
 	"github.com/danm-cni/danm/pkg/netcontrol"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -32,14 +33,19 @@ func main() {
 	log.SetOutput(os.Stdout)
 	log.Println("Starting DANM NetWatcher...")
 	kubeConfig := flag.String("kubeconf", "", "Path to a kube config. Only required if out-of-cluster.")
+	sourceLearning := flag.Bool("multicast", false, "Controls whether VxLAN VTEPs are created with multicast source learning enabled. Default is false.")
 	flag.Parse()
-	config, err := getClientConfig(kubeConfig)
+	restConfig, err := getClientConfig(kubeConfig)
 	if err != nil {
 		log.Println("ERROR: Parsing kubeconfig failed with error:" + err.Error() + " , exiting")
 		os.Exit(-1)
 	}
+	netWatcherConfig := datastructs.NetwatcherConfig{
+		RestConfig:     restConfig,
+		SourceLearning: *sourceLearning,
+	}
 	stopCh := make(chan struct{})
-	netWatcher, err := netcontrol.NewWatcher(config, &stopCh)
+	netWatcher, err := netcontrol.NewWatcher(netWatcherConfig, &stopCh)
 	if err != nil {
 		log.Println("ERROR: Creation of NetWatcher failed with error:" + err.Error() + " , exiting")
 		os.Exit(-1)

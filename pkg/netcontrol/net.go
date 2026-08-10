@@ -14,8 +14,6 @@ import (
 const (
 	ip4MulticastCidr = "239.0.0.0/8"
 	ip6MulticastCidr = "ff02::0/16"
-	maxVlanId        = 4094
-	maxVxlanId       = 16777214
 )
 
 // LinkInfo is an absract struct to represent a host NIC of a special type: either VLAN, or VxLAN
@@ -62,7 +60,7 @@ func deleteHostInterface(ifId int, ifName string) error {
 	return nil
 }
 
-func setupHost(dnet *danmtypes.DanmNet) error {
+func setupHost(dnet *danmtypes.DanmNet, sourceLearning bool) error {
 	if dnet.Spec.Options.Device == "" {
 		return nil
 	}
@@ -78,7 +76,7 @@ func setupHost(dnet *danmtypes.DanmNet) error {
 	if err != nil {
 		return err
 	}
-	return setupVxlan(vxlanId, netId, hdev)
+	return setupVxlan(vxlanId, netId, hdev, sourceLearning)
 }
 
 func setupVlan(vlanId int, netId, hdev string) error {
@@ -143,7 +141,7 @@ func determineVlanHdev(vlanId int, netId, hdev string) string {
 	return netId + "." + strconv.Itoa(vlanId)
 }
 
-func setupVxlan(vxlanId int, netId, hdev string) error {
+func setupVxlan(vxlanId int, netId, hdev string, sourceLearning bool) error {
 	vxlanName := "vx_" + netId
 	shouldInterfaceBeCreated, hostLink, err := shouldInterfaceBeCreated(vxlanId, vxlanName, hdev)
 	if err != nil {
@@ -151,18 +149,14 @@ func setupVxlan(vxlanId int, netId, hdev string) error {
 	} else if !shouldInterfaceBeCreated {
 		return nil
 	}
-	mcastIP, err := getMulticastIp(netlink.FAMILY_V4, strconv.Itoa(vxlanId))
-	if err != nil {
-		return err
-	}
-	addr, mcast := parseVxlanHostIp(netlink.FAMILY_V4, hostLink.link, mcastIP)
+	isHostIfaceIpv4 := true
+	addr := parseVxlanHostIp(netlink.FAMILY_V4, hostLink.link)
 	if addr.String() == "<nil>" {
-		mcastIP, tempErr := getMulticastIp(netlink.FAMILY_V6, strconv.Itoa(vxlanId))
-		if tempErr != nil {
-			return tempErr
-		}
-		addr, mcast = parseVxlanHostIp(netlink.FAMILY_V6, hostLink.link, mcastIP)
+		isHostIfaceIpv4 = false
+		addr = parseVxlanHostIp(netlink.FAMILY_V6, hostLink.link)
 	}
+	//TODO: technically it is enough if the host interface with the source IP exists but it does not necessarily need to be the literal parent...
+	//We could parse all host interfaces to see if any of them matches the intended egress
 	if addr.String() == "<nil>" {
 		return errors.New("VxLAN interface cannot be set-up on top of a host interface:" + hdev + ", which does not have an IP")
 	}
@@ -173,11 +167,22 @@ func setupVxlan(vxlanId int, netId, hdev string) error {
 		VxlanId:      hostLink.interfaceId,
 		VtepDevIndex: hostLink.link.Attrs().Index,
 		Port:         4789,
-		Group:        mcast,
 		SrcAddr:      addr,
-		Learning:     true,
-		L2miss:       true,
-		L3miss:       true,
+		Learning:     sourceLearning,
+		L2miss:       sourceLearning,
+		L3miss:       sourceLearning,
+	}
+	if sourceLearning {
+		var mcastIP net.IP
+		if isHostIfaceIpv4 {
+			mcastIP, err = getMulticastIp(netlink.FAMILY_V4, strconv.Itoa(vxlanId))
+		} else {
+			mcastIP, err = getMulticastIp(netlink.FAMILY_V6, strconv.Itoa(vxlanId))
+		}
+		if err != nil {
+			return err
+		}
+		vxlan.Group = mcastIP
 	}
 	err = addLink(vxlan)
 	if err != nil {
@@ -209,19 +214,17 @@ func getMulticastIp(ipFamily int, vxlanId string) (net.IP, error) {
 	return mcastIP, nil
 }
 
-func parseVxlanHostIp(ipFamily int, hdev netlink.Link, mcastFilter net.IP) (net.IP, net.IP) {
+func parseVxlanHostIp(ipFamily int, hdev netlink.Link) net.IP {
 	var hostAddr net.IP
-	var hostMultiCastAddr net.IP
 	addresses, err := netlink.AddrList(hdev, ipFamily)
 	if err != nil {
-		return hostAddr, hostMultiCastAddr
+		return hostAddr
 	}
 	for _, x := range addresses {
 		if x.Scope == syscall.RT_SCOPE_UNIVERSE {
 			hostAddr = x.IPNet.IP
-			hostMultiCastAddr = mcastFilter
-			return hostAddr, hostMultiCastAddr
+			return hostAddr
 		}
 	}
-	return hostAddr, hostMultiCastAddr
+	return hostAddr
 }

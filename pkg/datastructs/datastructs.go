@@ -5,6 +5,7 @@ import (
 	"github.com/containernetworking/cni/pkg/version"
 	danmtypes "github.com/danm-cni/danm/crd/apis/danm/v1"
 	core_v1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/rest"
 )
 
 const (
@@ -75,4 +76,9 @@ type CniArgs struct {
 	Interfaces     []Interface
 	Pod            *core_v1.Pod
 	DefaultNetwork *danmtypes.DanmNet
+}
+
+type NetwatcherConfig struct {
+	RestConfig     *rest.Config
+	SourceLearning bool
 }
