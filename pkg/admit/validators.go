@@ -34,11 +34,11 @@ var (
 type ValidatorFunc func(oldManifest, newManifest *danmtypes.DanmNet, opType admv1beta1.Operation, client danmclientset.Interface) error
 type ValidatorMapping []ValidatorFunc
 
-func filterVnis(origSet cpuset.CPUSet) cpuset.CPUSet {
+func filterVnis(origSet cpuset.CPUSet, maxAllowedVni int) cpuset.CPUSet {
 	var newSet string
 	origIds := origSet.List()
 	for _, cpu := range origIds {
-		if cpu > MaxAllowedVni {
+		if cpu > maxAllowedVni {
 			if newSet == "" {
 				newSet = fmt.Sprint(cpu)
 			} else {
@@ -237,7 +237,7 @@ func validateIfaceConfig(ifaceConf danmtypes.IfaceProfile, opType admv1beta1.Ope
 		(ifaceConf.VniRange == "" && ifaceConf.VniType != "") {
 		return errors.New("vniRange and vniType attributes must be provided together for interface:" + ifaceConf.Name)
 	}
-	if ifaceConf.VniType != "" && ifaceConf.VniType != "vlan" && ifaceConf.VniType != "vxlan" {
+	if ifaceConf.VniType != "" && ifaceConf.VniType != VniTypeVlan && ifaceConf.VniType != VniTypeVxlan {
 		return errors.New(ifaceConf.VniType + " is not in allowed vniType values: {vlan,vxlan} for interface:" + ifaceConf.Name)
 	}
 	if opType == admv1beta1.Create && ifaceConf.Alloc != "" {
@@ -248,9 +248,10 @@ func validateIfaceConfig(ifaceConf danmtypes.IfaceProfile, opType admv1beta1.Ope
 	if err != nil {
 		return errors.New("vniRange for interface:" + ifaceConf.Name + " must be improperly formatted because its parsing fails with:" + err.Error())
 	}
-	filteredSet := filterVnis(vniSet)
+	maxAllowedVni := getMaxAllowedVni(ifaceConf.VniType)
+	filteredSet := filterVnis(vniSet, maxAllowedVni)
 	if filteredSet.Size() > 0 {
-		return errors.New("vniRange for interface:" + ifaceConf.Name + " is invalid, because it cannot contain VNIs over the maximum supported number that is:" + strconv.Itoa(MaxAllowedVni))
+		return errors.New("vniRange for interface:" + ifaceConf.Name + " is invalid, because it cannot contain VNIs over the maximum supported number for its VNI Type that is:" + strconv.Itoa(maxAllowedVni))
 	}
 	return nil
 }

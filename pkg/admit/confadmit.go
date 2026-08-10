@@ -14,8 +14,13 @@ import (
 
 const (
 	//This is just a dimensioning decision to avoid reserving unnecessarily big bitarrays in TenantConfig
-	MaxAllowedVni  = 5000
-	HostDevicePath = "/hostDevices"
+	//VxLAN VNI ranges are much, much bigger than VLAN though so need to find the right balance between maximum value and storage space
+	//TODO: maybe reusing the bitarray library is not the best for this purpose, consider list? we should allow the entire standard VxLAN range (16M,ish) without taking up too much space in etcd
+	MaxAllowedVniVxlan = 100000
+	MaxAllowedVniVlan  = 4094
+	VniTypeVlan        = "vlan"
+	VniTypeVxlan       = "vxlan"
+	HostDevicePath     = "/hostDevices"
 )
 
 func (validator *Validator) ValidateTenantConfig(responseWriter http.ResponseWriter, request *http.Request) {
@@ -108,7 +113,7 @@ func mutateConfigManifest(tconf *danmtypes.TenantConfig) {
 		if ifaceConf.Alloc != "" || ifaceConf.VniType == "" {
 			continue
 		}
-		bitArray, _ := bitarray.NewBitArray(MaxAllowedVni + 1)
+		bitArray, _ := bitarray.NewBitArray(uint32(getMaxAllowedVni(ifaceConf.VniType)) + 1)
 		tconf.HostDevices[ifaceIndex].Alloc = bitArray.Encode()
 	}
 }
