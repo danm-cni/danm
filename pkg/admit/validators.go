@@ -11,6 +11,7 @@ import (
 	"github.com/danm-cni/danm/pkg/danmep"
 	"github.com/danm-cni/danm/pkg/datastructs"
 	"github.com/danm-cni/danm/pkg/ipam"
+	"github.com/danm-cni/danm/pkg/mtu"
 	admissionv1 "k8s.io/api/admission/v1beta1"
 	"k8s.io/utils/cpuset"
 )
@@ -20,9 +21,9 @@ const (
 )
 
 var (
-	DanmNetMapping       = []ValidatorFunc{validateIpv4Fields, validateIpv6Fields, validateAllocationPools, validateVids, validateNetworkId, validateAbsenceOfAllowedTenants, validateNeType, validateVniChange}
-	ClusterNetMapping    = []ValidatorFunc{validateIpv4Fields, validateIpv6Fields, validateAllocationPools, validateVids, validateNetworkId, validateNeType, validateVniChange}
-	TenantNetMapping     = []ValidatorFunc{validateIpv4Fields, validateIpv6Fields, validateAllocationPools, validateAbsenceOfAllowedTenants, validateTenantNetRules, validateNeType}
+	DanmNetMapping       = []ValidatorFunc{validateIpv4Fields, validateIpv6Fields, validateAllocationPools, validateVids, validateNetworkId, validateAbsenceOfAllowedTenants, validateNeType, validateVniChange, validateMtuChange}
+	ClusterNetMapping    = []ValidatorFunc{validateIpv4Fields, validateIpv6Fields, validateAllocationPools, validateVids, validateNetworkId, validateNeType, validateVniChange, validateMtuChange}
+	TenantNetMapping     = []ValidatorFunc{validateIpv4Fields, validateIpv6Fields, validateAllocationPools, validateAbsenceOfAllowedTenants, validateTenantNetRules, validateNeType, validateMtuChange}
 	danmValidationConfig = map[string]ValidatorMapping{
 		"DanmNet":        DanmNetMapping,
 		"ClusterNetwork": ClusterNetMapping,
@@ -278,7 +279,24 @@ func validateVniChange(oldManifest, newManifest *danmtypes.DanmNet, opType admis
 	}
 	if (oldManifest.Spec.Options.Vlan != 0 && (oldManifest.Spec.Options.Vlan != newManifest.Spec.Options.Vlan || oldManifest.Spec.Options.Device != newManifest.Spec.Options.Device)) ||
 		(oldManifest.Spec.Options.Vxlan != 0 && (oldManifest.Spec.Options.Vxlan != newManifest.Spec.Options.Vxlan || oldManifest.Spec.Options.Device != newManifest.Spec.Options.Device)) {
-		return errors.New("cannot change VNI/host_device of a network which having any Pods connected to it e.g. Pod:" + connectedEp.Spec.Pod + " in namespace:" + connectedEp.ObjectMeta.Namespace)
+		return errors.New("cannot change VNI/host_device of a network having any Pods connected to it e.g. Pod:" + connectedEp.Spec.Pod + " in namespace:" + connectedEp.ObjectMeta.Namespace)
+	}
+	return nil
+}
+
+func validateMtuChange(oldManifest, newManifest *danmtypes.DanmNet, opType admissionv1.Operation, client danmclientset.Interface) error {
+	if opType != admissionv1.Update {
+		return nil
+	}
+	isAnyPodConnectedToNetwork, connectedEp, err := danmep.ArePodsConnectedToNetwork(client, oldManifest)
+	if err != nil {
+		return errors.New("no way to tell if Pods are still using the network due to:" + err.Error())
+	}
+	if !isAnyPodConnectedToNetwork {
+		return nil
+	}
+	if mtu.GetMtuForNet(newManifest) < mtu.GetMtuForNet(oldManifest) {
+		return errors.New("cannot lower MTU of a network having any Pods connected to it e.g. Pod:" + connectedEp.Spec.Pod + " in namespace:" + connectedEp.ObjectMeta.Namespace)
 	}
 	return nil
 }

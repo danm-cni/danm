@@ -88,6 +88,16 @@ spec:
     # OPTIONAL - STRING
     # NOTE: DANM ignores this parameter if the respective interface is the first in the connecting Pod's network namespace. That interface will be named "eth0".
     container_prefix: ## INTERNAL_IF_NAME ##
+    # The maximum packet size containers connecting to this network are allowed to transmit while using the Linux IP stack.
+    # This configuration affects the following supported backends:
+    # - all static CNI delegates supporting "mtu" key in the top level of their CNI configuration file
+    # - MACVLAN (VLAN or VxLAN backed)
+    # - IPVLAN (VLAN or VxLAN backed)
+    # If MTU value is not explicitly set both host, and interfaces created by dynamic delegates will have it set to 1500. For static CNI delegates "mtu" key is only overrode in their config when explicitly set in their network object.
+    # Note1: the configured MTU number represents the workload usable throughput which does not equal E2E capacity. The underlying host interface is expected to carry the 50 (IPv4) / 70 (IPv6) bytes encapsulation overhead when creating VxLAN host interfaces.
+    # Note2: DANM supports resizing existing host interfaces when this parameter is UPDATEd in the network object. Unconditionally when it's increased, however all Pods connected to the network need to be first deleted before a decrement is allowed.
+    # OPTIONAL - INTEGER number between 1280-9000
+    mtu: ## MTU_NUMBER ##
     # Policy-based IP routes belonging to this network are installed into this routing table, when a user defines them in her Pod's interfaces annotation.
     # Generally supported parameter, works with all NetworkTypes.
     # OPTIONAL - INTEGER (e.g. 201)

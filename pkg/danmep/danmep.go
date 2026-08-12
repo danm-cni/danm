@@ -17,6 +17,7 @@ import (
 	danmclientset "github.com/danm-cni/danm/crd/client/clientset/versioned"
 	"github.com/danm-cni/danm/pkg/datastructs"
 	"github.com/danm-cni/danm/pkg/ipam"
+	"github.com/danm-cni/danm/pkg/mtu"
 	"github.com/danm-cni/danm/pkg/netcontrol"
 	sriov_utils "github.com/k8snetworkplumbingwg/sriov-cni/pkg/utils"
 	uuid "github.com/satori/go.uuid"
@@ -270,6 +271,7 @@ func CreateDanmEp(danmClient danmclientset.Interface, namingScheme string, isIpR
 		Proutes:     iface.Proutes,
 		Proutes6:    iface.Proutes6,
 		DeviceID:    iface.Device,
+		Mtu:         mtu.GetMtuForNet(netInfo),
 	}
 	var hwAddress net.HardwareAddr
 	if iface.Device != "" {

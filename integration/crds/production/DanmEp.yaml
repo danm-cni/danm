@@ -48,6 +48,8 @@ spec:
                     type: string
                   MacAddress:
                     type: string
+                  Mtu:
+                    type: integer
                   Name:
                     type: string
                   proutes:

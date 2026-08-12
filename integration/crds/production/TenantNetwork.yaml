@@ -109,6 +109,11 @@ spec:
                   host_device:
                     description: The device to where the network is attached
                     type: string
+                  mtu:
+                    description: The maximum packet size containers connecting to this network are allowed to transmit while using the Linux IP stack
+                    type: integer
+                    minimum: 1280
+                    maximum: 9000
                   net6:
                     description: IPv6 specific parameters IPv6 unique global address prefix
                     type: string

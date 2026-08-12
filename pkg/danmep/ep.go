@@ -11,6 +11,7 @@ import (
 	"github.com/containernetworking/plugins/pkg/ns"
 	danmtypes "github.com/danm-cni/danm/crd/apis/danm/v1"
 	"github.com/danm-cni/danm/pkg/ipam"
+	"github.com/danm-cni/danm/pkg/mtu"
 	"github.com/danm-cni/danm/pkg/netcontrol"
 	"github.com/j-keck/arping"
 	"github.com/vishvananda/netlink"
@@ -33,10 +34,10 @@ func createIpvlanInterface(dnet *danmtypes.DanmNet, ep *danmtypes.DanmEp) error 
 		return errors.New("Cannot get container pid!")
 	}
 	device := netcontrol.DetermineHostDeviceName(dnet)
-	return createContainerIface(ep, dnet, device)
+	return createContainerIface(ep, device)
 }
 
-func createContainerIface(ep *danmtypes.DanmEp, dnet *danmtypes.DanmNet, device string) error {
+func createContainerIface(ep *danmtypes.DanmEp, device string) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	origns, err := ns.GetCurrentNS()
@@ -58,12 +59,24 @@ func createContainerIface(ep *danmtypes.DanmEp, dnet *danmtypes.DanmNet, device 
 	if err != nil {
 		return errors.New("cannot find host device because:" + err.Error())
 	}
+	//Pre-flight to ensure interface creation isn't failing at kernel level due to MTU mismatch
+	dummyDnet := danmtypes.DanmNet{
+		Spec: danmtypes.DanmNetSpec{
+			Options: danmtypes.DanmNetOption{
+				Mtu: ep.Spec.Iface.Mtu,
+			},
+		},
+	}
+	err = mtu.ValidateForDev(&dummyDnet, iface.Attrs().MTU, iface.Attrs().Name)
+	if err != nil {
+		return errors.New("cannot set-up IPVLAN interface due to MTU mismatch: " + err.Error())
+	}
 	outer := ep.Spec.EndpointID
 	ipvlan := &netlink.IPVlan{
 		LinkAttrs: netlink.LinkAttrs{
 			Name:        outer[0:15],
 			ParentIndex: iface.Attrs().Index,
-			MTU:         iface.Attrs().MTU,
+			MTU:         ep.Spec.Iface.Mtu,
 		},
 		Mode: netlink.IPVLAN_MODE_L2,
 	}
