@@ -51,6 +51,8 @@ type DanmNetOption struct {
 	RTables int `json:"rt_tables,omitempty"`
 	// the VLAN id of the VLAN interface created on top of the host device
 	Vlan int `json:"vlan,omitempty"`
+	// MTU value of associated host and container network interfaces
+	Mtu int `json:"mtu,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -100,6 +102,7 @@ type DanmEpIface struct {
 	Proutes     map[string]string `json:"proutes,omitempty"`
 	Proutes6    map[string]string `json:"proutes6,omitempty"`
 	DeviceID    string            `json:"DeviceID,omitempty"`
+	Mtu         int               `json:"Mtu,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

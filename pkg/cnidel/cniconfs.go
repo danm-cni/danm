@@ -7,12 +7,13 @@ import (
 
 	danmtypes "github.com/danm-cni/danm/crd/apis/danm/v1"
 	"github.com/danm-cni/danm/pkg/datastructs"
+	"github.com/danm-cni/danm/pkg/mtu"
 	"github.com/danm-cni/danm/pkg/netcontrol"
 	sriov_utils "github.com/k8snetworkplumbingwg/sriov-cni/pkg/utils"
 )
 
 // This function creates CNI configuration for all static-level backends
-// The CNI binary matching with NetowrkType is invoked with the CNI config file matching with NetworkID parameter
+// The CNI binary matching with NetworkType is invoked with the CNI config file matching with NetworkID parameter
 func readCniConfigFile(cniconfDir string, netInfo *danmtypes.DanmNet, ipamOptions datastructs.IpamConfig) ([]byte, error) {
 	cniConfig := netInfo.Spec.NetworkID
 	rawConfig, err := os.ReadFile(cniconfDir + "/" + cniConfig + ".conf")
@@ -25,6 +26,11 @@ func readCniConfigFile(cniconfDir string, netInfo *danmtypes.DanmNet, ipamOption
 		ipamInGenericFormat := map[string]interface{}{}
 		json.Unmarshal(ipamRaw, &ipamInGenericFormat)
 		rawConfig = netcontrol.PatchCniConf(rawConfig, "ipam", ipamInGenericFormat)
+	}
+	//Many baseline CNI plugins support "mtu" top level key so might as well patch it in on a best effort basis
+	//The skeleton used by CNI plugins main usually ignores unknown keys so this should be generally harmless
+	if netInfo.Spec.Options.Mtu > 0 {
+		rawConfig = netcontrol.PatchCniConf(rawConfig, "mtu", netInfo.Spec.Options.Mtu)
 	}
 	return rawConfig, nil
 }
@@ -62,7 +68,7 @@ func getMacvlanCniConfig(netInfo *danmtypes.DanmNet, ipamOptions datastructs.Ipa
 	// initialize MacvlanNet specific fields:
 	macvlanConfig.Master = netcontrol.DetermineHostDeviceName(netInfo)
 	macvlanConfig.Mode = "bridge" //TODO: make these params configurable if required
-	macvlanConfig.MTU = 1500
+	macvlanConfig.MTU = mtu.GetMtuForNet(netInfo)
 	if len(ipamOptions.Ips) > 0 {
 		macvlanConfig.Ipam = ipamOptions
 	}

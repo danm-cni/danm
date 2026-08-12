@@ -2,12 +2,14 @@ package netcontrol
 
 import (
 	"errors"
+	"log"
 	"net"
 	"strconv"
 	"syscall"
 
 	"github.com/apparentlymart/go-cidr/cidr"
 	danmtypes "github.com/danm-cni/danm/crd/apis/danm/v1"
+	"github.com/danm-cni/danm/pkg/mtu"
 	"github.com/vishvananda/netlink"
 )
 
@@ -15,13 +17,6 @@ const (
 	ip4MulticastCidr = "239.0.0.0/8"
 	ip6MulticastCidr = "ff02::0/16"
 )
-
-// LinkInfo is an absract struct to represent a host NIC of a special type: either VLAN, or VxLAN
-// The ID of the link is stored together with its Golang representation
-type LinkInfo struct {
-	interfaceId int
-	link        netlink.Link
-}
 
 func deleteNetworks(dnet *danmtypes.DanmNet) error {
 	if dnet.Spec.Options.Device == "" {
@@ -64,35 +59,35 @@ func setupHost(dnet *danmtypes.DanmNet, sourceLearning bool) error {
 	if dnet.Spec.Options.Device == "" {
 		return nil
 	}
-	netId := dnet.Spec.NetworkID
-	hdev := dnet.Spec.Options.Device
-	vxlanId := dnet.Spec.Options.Vxlan
-	vlanId := dnet.Spec.Options.Vlan
 	// Nothing to do here
-	if vxlanId == 0 && vlanId == 0 {
+	if dnet.Spec.Options.Vxlan == 0 && dnet.Spec.Options.Vlan == 0 {
 		return nil
 	}
-	err := setupVlan(vlanId, netId, hdev)
+	err := setupVlan(dnet)
 	if err != nil {
 		return err
 	}
-	return setupVxlan(vxlanId, netId, hdev, sourceLearning)
+	return setupVxlan(dnet, sourceLearning)
 }
 
-func setupVlan(vlanId int, netId, hdev string) error {
-	vlanName := determineVlanHdev(vlanId, netId, hdev)
-	shouldInterfaceBeCreated, hostLink, err := shouldInterfaceBeCreated(vlanId, vlanName, hdev)
+func setupVlan(dnet *danmtypes.DanmNet) error {
+	if dnet.Spec.Options.Vlan == 0 {
+		return nil
+	}
+	vlanName := determineVlanHdev(dnet.Spec.Options.Vlan, dnet.Spec.NetworkID, dnet.Spec.Options.Device)
+	shouldInterfaceBeManipulated, hostLink, err := shouldInterfaceBeManipulated(dnet, vlanName)
 	if err != nil {
 		return errors.New("cannot set-up host VLAN interface:" + err.Error())
-	} else if !shouldInterfaceBeCreated {
+	} else if !shouldInterfaceBeManipulated {
 		return nil
 	}
 	vlan := &netlink.Vlan{
 		LinkAttrs: netlink.LinkAttrs{
 			Name:        vlanName,
-			ParentIndex: hostLink.link.Attrs().Index,
+			ParentIndex: hostLink.Attrs().Index,
+			MTU:         mtu.GetMtuForNet(dnet),
 		},
-		VlanId: hostLink.interfaceId,
+		VlanId: dnet.Spec.Options.Vlan,
 	}
 	err = addLink(vlan)
 	if err != nil {
@@ -101,22 +96,26 @@ func setupVlan(vlanId int, netId, hdev string) error {
 	return nil
 }
 
-func shouldInterfaceBeCreated(ifId int, ifName string, hostDevice string) (bool, LinkInfo, error) {
-	hostLink := LinkInfo{}
-	if ifId == 0 {
-		return false, hostLink, nil
-	}
-	_, err := netlink.LinkByName(ifName)
-	if err == nil {
-		return false, hostLink, nil
-	}
-	dev, err := netlink.LinkByName(hostDevice)
+func shouldInterfaceBeManipulated(dnet *danmtypes.DanmNet, ifName string) (bool, netlink.Link, error) {
+	var hostLink netlink.Link
+	dev, err := netlink.LinkByName(dnet.Spec.Options.Device)
 	if err != nil {
-		return false, hostLink, errors.New("host device:" + hostDevice + " is not present in the system")
+		return false, hostLink, errors.New("host device:" + dnet.Spec.Options.Device + " is not present in the system")
 	}
-	hostLink.interfaceId = ifId
-	hostLink.link = dev
-	return true, hostLink, nil
+	existingLink, err := netlink.LinkByName(ifName)
+	if err == nil {
+		if shouldWeResizeExistingLink(existingLink, dev, dnet) {
+			resizeExistingLink(existingLink, mtu.GetMtuForNet(dnet))
+		}
+		return false, hostLink, nil
+	}
+	//We don't want to accidentally create mixed MTU networks depending on which kernel driver was used to create the host device,
+	// so let's just fail creation itself.
+	err = mtu.ValidateForDev(dnet, dev.Attrs().MTU, dev.Attrs().Name)
+	if err != nil {
+		return false, hostLink, errors.New("cannot set-up host interface: " + err.Error())
+	}
+	return true, dev, nil
 }
 
 func addLink(link netlink.Link) error {
@@ -141,31 +140,35 @@ func determineVlanHdev(vlanId int, netId, hdev string) string {
 	return netId + "." + strconv.Itoa(vlanId)
 }
 
-func setupVxlan(vxlanId int, netId, hdev string, sourceLearning bool) error {
-	vxlanName := "vx_" + netId
-	shouldInterfaceBeCreated, hostLink, err := shouldInterfaceBeCreated(vxlanId, vxlanName, hdev)
+func setupVxlan(dnet *danmtypes.DanmNet, sourceLearning bool) error {
+	vxlanName := "vx_" + dnet.Spec.NetworkID
+	if dnet.Spec.Options.Vxlan == 0 {
+		return nil
+	}
+	shouldInterfaceBeManipulated, hostLink, err := shouldInterfaceBeManipulated(dnet, vxlanName)
 	if err != nil {
 		return errors.New("cannot set-up host VxLAN interface:" + err.Error())
-	} else if !shouldInterfaceBeCreated {
+	} else if !shouldInterfaceBeManipulated {
 		return nil
 	}
 	isHostIfaceIpv4 := true
-	addr := parseVxlanHostIp(netlink.FAMILY_V4, hostLink.link)
+	addr := parseVxlanHostIp(netlink.FAMILY_V4, hostLink)
 	if addr.String() == "<nil>" {
 		isHostIfaceIpv4 = false
-		addr = parseVxlanHostIp(netlink.FAMILY_V6, hostLink.link)
+		addr = parseVxlanHostIp(netlink.FAMILY_V6, hostLink)
 	}
 	//TODO: technically it is enough if the host interface with the source IP exists but it does not necessarily need to be the literal parent...
 	//We could parse all host interfaces to see if any of them matches the intended egress
 	if addr.String() == "<nil>" {
-		return errors.New("VxLAN interface cannot be set-up on top of a host interface:" + hdev + ", which does not have an IP")
+		return errors.New("VxLAN interface cannot be set-up on top of a host interface:" + dnet.Spec.Options.Device + ", which does not have an IP")
 	}
 	vxlan := &netlink.Vxlan{
 		LinkAttrs: netlink.LinkAttrs{
 			Name: vxlanName,
+			MTU:  mtu.GetMtuForNet(dnet),
 		},
-		VxlanId:      hostLink.interfaceId,
-		VtepDevIndex: hostLink.link.Attrs().Index,
+		VxlanId:      dnet.Spec.Options.Vxlan,
+		VtepDevIndex: hostLink.Attrs().Index,
 		Port:         4789,
 		SrcAddr:      addr,
 		Learning:     sourceLearning,
@@ -175,9 +178,9 @@ func setupVxlan(vxlanId int, netId, hdev string, sourceLearning bool) error {
 	if sourceLearning {
 		var mcastIP net.IP
 		if isHostIfaceIpv4 {
-			mcastIP, err = getMulticastIp(netlink.FAMILY_V4, strconv.Itoa(vxlanId))
+			mcastIP, err = getMulticastIp(netlink.FAMILY_V4, strconv.Itoa(dnet.Spec.Options.Vxlan))
 		} else {
-			mcastIP, err = getMulticastIp(netlink.FAMILY_V6, strconv.Itoa(vxlanId))
+			mcastIP, err = getMulticastIp(netlink.FAMILY_V6, strconv.Itoa(dnet.Spec.Options.Vxlan))
 		}
 		if err != nil {
 			return err
@@ -227,4 +230,30 @@ func parseVxlanHostIp(ipFamily int, hdev netlink.Link) net.IP {
 		}
 	}
 	return hostAddr
+}
+
+// Note: allowing lowering MTUs on existing networks rests upon webhook rejecting such changes when the network has connected Pods
+// Theoretically such a Pod could be instantiated after admission but before we get here, however this edge case is currently not worth validating
+func shouldWeResizeExistingLink(link netlink.Link, parent netlink.Link, dnet *danmtypes.DanmNet) bool {
+	desired := mtu.GetMtuForNet(dnet)
+	current := link.Attrs().MTU
+	if desired == current {
+		return false
+	}
+
+	if err := mtu.ValidateForDev(dnet, parent.Attrs().MTU, parent.Attrs().Name); err != nil {
+		log.Println("INFO: cannot change the MTU of existing host interface for network:" + dnet.Spec.NetworkID + " because:" + err.Error())
+		return false
+	}
+	return true
+}
+
+func resizeExistingLink(link netlink.Link, desiredMtu int) {
+	if err := netlink.LinkSetMTU(link, desiredMtu); err != nil {
+		log.Println("WARNING: changing MTU of existing host interface " + link.Attrs().Name + " from " + strconv.Itoa(link.Attrs().MTU) + " to " +
+			strconv.Itoa(desiredMtu) + " failed:" + err.Error())
+		return
+	}
+	log.Println("INFO: successfully changed MTU of existing host interface " + link.Attrs().Name + " from " +
+		strconv.Itoa(link.Attrs().MTU) + " to " + strconv.Itoa(desiredMtu))
 }

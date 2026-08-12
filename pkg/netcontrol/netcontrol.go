@@ -228,12 +228,13 @@ func (netWatcher *NetWatcher) UpdateDanmNet(oldObj, newObj interface{}) {
 		log.Println("ERROR: Can't update interfaces for DanmNet change, 'cause we have received an invalid new object from the K8s API server")
 		return
 	}
-	zeroVnis(oldDn, newdDn)
-	err := deleteNetworks(oldDn)
-	if err != nil {
-		log.Println("INFO: Deletion of old host interfaces for DanmNet:" + oldDn.ObjectMeta.Name + " after update failed with error:" + err.Error())
+	if isIfaceCleanupNeeded(oldDn, newdDn) {
+		err := deleteNetworks(oldDn)
+		if err != nil {
+			log.Println("INFO: Deletion of old host interfaces for DanmNet:" + oldDn.ObjectMeta.Name + " after update failed with error:" + err.Error())
+		}
 	}
-	err = setupHost(newdDn, netWatcher.Config.SourceLearning)
+	err := setupHost(newdDn, netWatcher.Config.SourceLearning)
 	if err != nil {
 		log.Println("INFO: Creating host interfaces for new DanmNet:" + newdDn.ObjectMeta.Name + " after update failed with error:" + err.Error())
 	}
@@ -286,12 +287,13 @@ func (netWatcher *NetWatcher) UpdateTenantNetwork(oldObj, newObj interface{}) {
 	}
 	oldDn := ConvertTnetToDnet(oldTn)
 	newdDn := ConvertTnetToDnet(newTn)
-	zeroVnis(oldDn, newdDn)
-	err := deleteNetworks(oldDn)
-	if err != nil {
-		log.Println("INFO: Deletion of old host interfaces for TenantNetwork:" + oldDn.ObjectMeta.Name + " after update failed with error:" + err.Error())
+	if isIfaceCleanupNeeded(oldDn, newdDn) {
+		err := deleteNetworks(oldDn)
+		if err != nil {
+			log.Println("INFO: Deletion of old host interfaces for TenantNetwork:" + oldDn.ObjectMeta.Name + " after update failed with error:" + err.Error())
+		}
 	}
-	err = setupHost(newdDn, netWatcher.Config.SourceLearning)
+	err := setupHost(newdDn, netWatcher.Config.SourceLearning)
 	if err != nil {
 		log.Println("INFO: Creating host interfaces for new TenantNetwork:" + newdDn.ObjectMeta.Name + " after update failed with error:" + err.Error())
 	}
@@ -345,12 +347,13 @@ func (netWatcher *NetWatcher) UpdateClusterNetwork(oldObj, newObj interface{}) {
 	}
 	oldDn := ConvertCnetToDnet(oldCn)
 	newdDn := ConvertCnetToDnet(newCn)
-	zeroVnis(oldDn, newdDn)
-	err := deleteNetworks(oldDn)
-	if err != nil {
-		log.Println("INFO: Deletion of old host interfaces for ClusterNetwork:" + oldDn.ObjectMeta.Name + " after update failed with error:" + err.Error())
+	if isIfaceCleanupNeeded(oldDn, newdDn) {
+		err := deleteNetworks(oldDn)
+		if err != nil {
+			log.Println("INFO: Deletion of old host interfaces for ClusterNetwork:" + oldDn.ObjectMeta.Name + " after update failed with error:" + err.Error())
+		}
 	}
-	err = setupHost(newdDn, netWatcher.Config.SourceLearning)
+	err := setupHost(newdDn, netWatcher.Config.SourceLearning)
 	if err != nil {
 		log.Println("INFO: Creating host interfaces for new ClusterNetwork:" + newdDn.ObjectMeta.Name + " after update failed with error:" + err.Error())
 	}
@@ -428,10 +431,11 @@ func (netWatcher *NetWatcher) UpdateNad(oldObj, newObj interface{}) {
 		return
 	}
 	parentUpdateNeeded := (DetermineHostDeviceName(oldDn) != DetermineHostDeviceName(newdDn))
-	zeroVnis(oldDn, newdDn)
-	err = deleteNetworks(oldDn)
-	if err != nil {
-		log.Println("INFO: Deletion of old host interfaces for NetworkAttachmentDefinition:" + oldNad.ObjectMeta.Name + " after update failed with error:" + err.Error())
+	if isIfaceCleanupNeeded(oldDn, newdDn) {
+		err = deleteNetworks(oldDn)
+		if err != nil {
+			log.Println("INFO: Deletion of old host interfaces for NetworkAttachmentDefinition:" + oldNad.ObjectMeta.Name + " after update failed with error:" + err.Error())
+		}
 	}
 	err = setupHost(newdDn, netWatcher.Config.SourceLearning)
 	if err != nil {
@@ -666,15 +670,8 @@ func PatchCniConf(rawConf []byte, patchKey string, patchValue interface{}) []byt
 	return moddedCniConf
 }
 
-// Little trickery: if there was no change in the VNI+host_device combo during the update we set it to 0 in the manifests.
-// Thus we avoid unnecessarily recreating host interfaces.
-func zeroVnis(oldDn, newDn *danmtypes.DanmNet) {
-	if oldDn.Spec.Options.Vlan == newDn.Spec.Options.Vlan && oldDn.Spec.Options.Device == newDn.Spec.Options.Device {
-		oldDn.Spec.Options.Vlan = 0
-		newDn.Spec.Options.Vlan = 0
-	}
-	if oldDn.Spec.Options.Vxlan == newDn.Spec.Options.Vxlan && oldDn.Spec.Options.Device == newDn.Spec.Options.Device {
-		oldDn.Spec.Options.Vxlan = 0
-		newDn.Spec.Options.Vxlan = 0
-	}
+func isIfaceCleanupNeeded(oldDn, newDn *danmtypes.DanmNet) bool {
+	isVlanCleanupNeeded := oldDn.Spec.Options.Vlan != 0 && (oldDn.Spec.Options.Vlan != newDn.Spec.Options.Vlan || oldDn.Spec.Options.Device != newDn.Spec.Options.Device)
+	isVtepCleanupNeeded := oldDn.Spec.Options.Vxlan != 0 && (oldDn.Spec.Options.Vxlan != newDn.Spec.Options.Vxlan || oldDn.Spec.Options.Device != newDn.Spec.Options.Device)
+	return isVlanCleanupNeeded || isVtepCleanupNeeded
 }
