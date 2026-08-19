@@ -656,6 +656,7 @@ func DetermineHostDeviceName(dnet *danmtypes.DanmNet) string {
 	return device
 }
 
+// TODO: one day we will break this import cycle between PatchCniConf(cnidel) and DetermineHostDevice(netcontrol) but today is not that day
 func PatchCniConf(rawConf []byte, patchKey string, patchValue interface{}) []byte {
 	transparentCniConf := map[string]interface{}{}
 	json.Unmarshal(rawConf, &transparentCniConf)

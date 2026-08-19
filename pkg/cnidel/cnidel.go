@@ -114,7 +114,7 @@ func getCniPluginConfig(netConf *datastructs.NetConf, netInfo *danmtypes.DanmNet
 	if cni, ok := SupportedNativeCnis[strings.ToLower(netInfo.Spec.NetworkType)]; ok {
 		return cni.ReadConfig(netInfo, ipamOptions, ep, cni.CNIVersion)
 	} else {
-		return readCniConfigFile(netConf.CniConfigDir, netInfo, ipamOptions)
+		return getStaticCniConfig(netConf.CniConfigDir, netInfo, ipamOptions)
 	}
 }
 
