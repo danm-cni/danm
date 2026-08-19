@@ -69,42 +69,36 @@ func NewWatcher(cfg datastructs.NetwatcherConfig, stopChan *chan struct{}) (*Net
 			log.Println("INFO: DanmNet discovery query failed with error:" + err.Error())
 			time.Sleep(RetryInterval * time.Millisecond)
 		} else {
-			log.Println("INFO: DanmNet API seems to be installed in the cluster!")
+			log.Println("INFO: DanmNet API seems to be installed in the cluster, starting DanmNet Controller!")
 			netWatcher.createDnetInformer(dnetClient)
 			break
 		}
 	}
+	//TODO: we should probably share clients between the Informers
 	tnetClient, err := danmclientset.NewForConfig(cfg.RestConfig)
 	if err != nil {
 		return nil, err
-	}
-	for i := 0; i < MaxRetryCount; i++ {
-		log.Println("INFO: Trying to discover TenantNetwork API in the cluster...")
-		_, err = tnetClient.DanmV1().TenantNetworks("").List(context.TODO(), meta_v1.ListOptions{})
-		if err != nil {
-			log.Println("INFO: TenantNetwork discovery query failed with error:" + err.Error())
-			time.Sleep(RetryInterval * time.Millisecond)
-		} else {
-			log.Println("INFO: TenantNetwork API seems to be installed in the cluster!")
-			netWatcher.createTnetInformer(tnetClient)
-			break
-		}
 	}
 	cnetClient, err := danmclientset.NewForConfig(cfg.RestConfig)
 	if err != nil {
 		return nil, err
 	}
+	//Production APIs work in tandem, Netwatcher shall not start-up if only one or the other would be served
 	for i := 0; i < MaxRetryCount; i++ {
-		log.Println("INFO: Trying to discover ClusterNetwork API in the cluster...")
-		_, err = cnetClient.DanmV1().ClusterNetworks().List(context.TODO(), meta_v1.ListOptions{})
-		if err != nil {
-			log.Println("INFO: ClusterNetwork discovery query failed with error:" + err.Error())
-			time.Sleep(RetryInterval * time.Millisecond)
+		log.Println("INFO: Trying to discover Production APIs in the cluster...")
+		_, tnetDiscoveryErr := tnetClient.DanmV1().TenantNetworks("").List(context.TODO(), meta_v1.ListOptions{})
+		_, cnetDiscoveryErr := cnetClient.DanmV1().ClusterNetworks().List(context.TODO(), meta_v1.ListOptions{})
+		if tnetDiscoveryErr != nil {
+			log.Println("INFO: TenantNetwork discovery query failed with error:" + tnetDiscoveryErr.Error())
+		} else if cnetDiscoveryErr != nil {
+			log.Println("INFO: ClusterNetwork discovery query failed with error:" + cnetDiscoveryErr.Error())
 		} else {
-			log.Println("INFO: ClusterNetwork API seems to be installed in the cluster!")
+			log.Println("INFO: Production APIs seem to be installed in the cluster, starting both Tenant and ClusterNetwork Controllers!")
+			netWatcher.createTnetInformer(tnetClient)
 			netWatcher.createCnetInformer(cnetClient)
 			break
 		}
+		time.Sleep(RetryInterval * time.Millisecond)
 	}
 	nadClient, err := nadclientset.NewForConfig(cfg.RestConfig)
 	if err != nil {
@@ -117,7 +111,7 @@ func NewWatcher(cfg datastructs.NetwatcherConfig, stopChan *chan struct{}) (*Net
 			log.Println("INFO: NetworkAttachmentDefinition discovery query failed with error:" + err.Error())
 			time.Sleep(RetryInterval * time.Millisecond)
 		} else {
-			log.Println("INFO: NetworkAttachmentDefinition API seems to be installed in the cluster!")
+			log.Println("INFO: NetworkAttachmentDefinition API seems to be installed in the cluster, starting NAD Controller!")
 			netWatcher.createNadInformer(nadClient)
 			break
 		}
