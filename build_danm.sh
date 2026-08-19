@@ -29,7 +29,7 @@
 #
 
 # error handling with trap taken from https://unix.stackexchange.com/questions/79648/how-to-trigger-error-using-trap-command/157327
-unset killer_sig 
+unset killer_sig
 for sig in SIGHUP SIGINT SIGQUIT SIGTERM; do
   trap '
     killer_sig="$sig"

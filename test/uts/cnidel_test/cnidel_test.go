@@ -127,8 +127,8 @@ var testNets = []danmtypes.DanmNet{
 }
 
 var expectedCniConfigs = []CniConf{
-	{"flannel", []byte(`{"cniexp":{"cnitype":"flannel"},"cniconf":{"cniVersion":"0.3.1","name":"cbr0","type":"flannel","delegate":{"hairpinMode":true,"isDefaultGateway":true}}}`)},
-	{"flannel-ip", []byte(`{"cniexp":{"cnitype":"flannel","ip":"10.244.10.30/24","env":{"CNI_COMMAND":"ADD","CNI_IFNAME":"eth0"}},"cniconf":{"cniVersion":"0.3.1","name":"cbr0","type":"flannel","delegate":{"hairpinMode":true,"isDefaultGateway":true}}}`)},
+	{"flannel", []byte(`{"cniexp":{"cnitype":"flannel"},"cniconf":{"cniVersion":"0.3.1","name":"flannel_conf","type":"flannel","delegate":{"hairpinMode":true,"isDefaultGateway":true}}}`)},
+	{"flannel-ip", []byte(`{"cniexp":{"cnitype":"flannel","ip":"10.244.10.30/24","env":{"CNI_COMMAND":"ADD","CNI_IFNAME":"eth0"}},"cniconf":{"cniVersion":"0.3.1","name":"flannel_conf","type":"flannel","delegate":{"hairpinMode":true,"isDefaultGateway":true}}}`)},
 	{"macvlan-ip4", []byte(`{"cniexp":{"cnitype":"macvlan","ip":"192.168.1.65/26","env":{"CNI_COMMAND":"ADD","CNI_IFNAME":"ens1f0"}},"cniconf":{"cniVersion":"0.3.1","name":"macvlan-v4","master":"ens1f0","mode":"bridge","mtu":1500,"ipam":{"type":"fakeipam","ips":[{"ipcidr":"192.168.1.65/26","version":4}]}}}`)},
 	{"macvlan-ip6", []byte(`{"cniexp":{"cnitype":"macvlan","ip6":"2a00:8a00:a000:1193::/64","env":{"CNI_COMMAND":"ADD","CNI_IFNAME":"ens1f1"}},"cniconf":{"cniVersion":"0.3.1","name":"macvlan-v6","master":"ens1f1","mode":"bridge","mtu":1500,"ipam":{"type":"fakeipam"}}}`)},
 	{"macvlan-dual-stack", []byte(`{"cniexp":{"cnitype":"macvlan","ip":"192.168.1.65/26","ip6":"2a00:8a00:a000:1193::/64","env":{"CNI_COMMAND":"ADD","CNI_IFNAME":"ens1f1"}},"cniconf":{"cniVersion":"0.3.1","name":"macvlan-ds","master":"ens1f1","mode":"bridge","mtu":1500,"ipam":{"type":"fakeipam","ips":[{"ipcidr":"192.168.1.65/26","version":4}]}}}`)},
@@ -136,16 +136,16 @@ var expectedCniConfigs = []CniConf{
 	{"macvlan-ip6-type020", []byte(`{"cniexp":{"cnitype":"macvlan","ip6":"2a00:8a00:a000:1193::/64","env":{"CNI_COMMAND":"ADD","CNI_IFNAME":"ens1f1"},"return":"020"},"cniconf":{"cniVersion":"0.3.1","name":"macvlan-v6","master":"ens1f1","mode":"bridge","mtu":1500,"ipam":{"type":"fakeipam"}}}`)},
 	{"sriov-l3", []byte(`{"cniexp":{"cnitype":"sriov","ip":"192.168.1.65/26","env":{"CNI_COMMAND":"ADD","CNI_IFNAME":"eth0"}},"cniconf":{"cniVersion":"0.3.1","name":"sriov-test","type":"sriov","master":"enp175s0f1","vlan":500,"deviceID":"0000:af:06.0","ipam":{"type":"fakeipam","ips":[{"ipcidr":"192.168.1.65/26","version":4}]}}}`)},
 	{"sriov-l2", []byte(`{"cniexp":{"cnitype":"sriov","env":{"CNI_COMMAND":"ADD","CNI_IFNAME":"eth0"}},"cniconf":{"cniVersion":"0.3.1","name":"sriov-test","type":"sriov","master":"enp175s0f1","vlan":500,"deviceID":"0000:af:06.0"}}`)},
-	{"deleteflannel", []byte(`{"cniexp":{"cnitype":"flannel","env":{"CNI_COMMAND":"DEL","CNI_IFNAME":"eth0"}},"cniconf":{"cniVersion":"0.3.1","name":"cbr0","type":"flannel","delegate":{"hairpinMode":true,"isDefaultGateway":true}}}`)},
+	{"deleteflannel", []byte(`{"cniexp":{"cnitype":"flannel","env":{"CNI_COMMAND":"DEL","CNI_IFNAME":"eth0"}},"cniconf":{"cniVersion":"0.3.1","name":"flannel_conf","type":"flannel","delegate":{"hairpinMode":true,"isDefaultGateway":true}}}`)},
 	{"deletemacvlan", []byte(`{"cniexp":{"cnitype":"macvlan","env":{"CNI_COMMAND":"DEL","CNI_IFNAME":"ens1f0"}},"cniconf":{"cniVersion":"0.3.1","name":"full","master":"ens1f0","mode":"bridge","mtu":1500,"ipam": {"type": "fakeipam","ips":[{"ipcidr":"192.168.1.65/26","version":4}]}}}`)},
-	{"bridge-l3-ip4", []byte(`{"cniexp":{"cnitype":"macvlan","ip":"192.168.1.65/26","env":{"CNI_COMMAND":"ADD","CNI_IFNAME":"eth0"}},"cniconf":{"cniVersion":"0.3.1","name": "mynet","type": "bridge","bridge": "mynet0","isDefaultGateway": true,"forceAddress": false,"ipMasq": true,"hairpinMode": true,"ipam": {"type": "fakeipam","ips":[{"ipcidr":"192.168.1.65/26","version":4}]}}}`)},
-	{"bridge-l2-ip4", []byte(`{"cniexp":{"cnitype":"macvlan","ip":"192.168.1.65/26","env":{"CNI_COMMAND":"ADD","CNI_IFNAME":"eth0"}},"cniconf":{"cniVersion":"0.3.1","name": "mynet","type": "bridge","bridge": "mynet0","ipam": {"type": "fakeipam","ips":[{"ipcidr":"192.168.1.65/26","version":4}]}}}`)},
-	{"bridge-l3-orig", []byte(`{"cniexp":{"cnitype":"macvlan","ip":"10.10.0.1/16","env":{"CNI_COMMAND":"ADD","CNI_IFNAME":"eth0"}},"cniconf":{"cniVersion":"0.3.1","name": "mynet","type": "bridge","bridge": "mynet0","isDefaultGateway": true,"forceAddress": false,"ipMasq": true,"hairpinMode": true,"ipam": {"type": "host-local","subnet": "10.10.0.0/16"}}}`)},
-	{"bridge-l2-orig", []byte(`{"cniexp":{"cnitype":"macvlan","env":{"CNI_COMMAND":"ADD","CNI_IFNAME":"eth0"}},"cniconf":{"cniVersion":"0.3.1","name": "mynet","type": "bridge","bridge": "mynet0"}}`)},
-	{"bridge-l3-ip6", []byte(`{"cniexp":{"cnitype":"macvlan","ip6":"2a00:8a00:a000:1193::/64","env":{"CNI_COMMAND":"ADD","CNI_IFNAME":"eth0"}},"cniconf":{"cniVersion":"0.3.1","name": "mynet","type": "bridge","bridge": "mynet0","isDefaultGateway": true,"forceAddress": false,"ipMasq": true,"hairpinMode": true,"ipam": {"type": "fakeipam"}}}`)},
-	{"bridge-l3-ds", []byte(`{"cniexp":{"cnitype":"macvlan","ip":"192.168.1.65/26","ip6":"2a00:8a00:a000:1193::/64","env":{"CNI_COMMAND":"ADD","CNI_IFNAME":"eth0"}},"cniconf":{"cniVersion":"0.3.1","name": "mynet","type": "bridge","bridge": "mynet0","isDefaultGateway": true,"forceAddress": false,"ipMasq": true,"hairpinMode": true,"ipam": {"type": "fakeipam","ips":[{"ipcidr":"192.168.1.65/26","version":4}]}}}`)},
-	{"deletebridge", []byte(`{"cniexp":{"cnitype":"macvlan","env":{"CNI_COMMAND":"DEL","CNI_IFNAME":"eth0"}},"cniconf":{"cniVersion":"0.3.1","name": "mynet","type": "bridge","bridge": "mynet0","ipam": {"type": "fakeipam","ips":[{"ipcidr":"192.168.1.65/26","version":4}]}}}`)},
-	{"deletebridge-wo-ipam", []byte(`{"cniexp":{"cnitype":"macvlan","env":{"CNI_COMMAND":"DEL","CNI_IFNAME":"eth0"}},"cniconf":{"cniVersion":"0.3.1","name": "mynet","type": "bridge","bridge": "mynet0"}}`)},
+	{"bridge-l3-ip4", []byte(`{"cniexp":{"cnitype":"macvlan","ip":"192.168.1.65/26","env":{"CNI_COMMAND":"ADD","CNI_IFNAME":"eth0"}},"cniconf":{"cniVersion":"0.3.1","name": "bridge_l3","type": "bridge","bridge": "mynet0","isDefaultGateway": true,"forceAddress": false,"ipMasq": true,"hairpinMode": true,"ipam": {"type": "fakeipam","ips":[{"ipcidr":"192.168.1.65/26","version":4}]}}}`)},
+	{"bridge-l2-ip4", []byte(`{"cniexp":{"cnitype":"macvlan","ip":"192.168.1.65/26","env":{"CNI_COMMAND":"ADD","CNI_IFNAME":"eth0"}},"cniconf":{"cniVersion":"0.3.1","name": "bridge_l2","type": "bridge","bridge": "mynet0","ipam": {"type": "fakeipam","ips":[{"ipcidr":"192.168.1.65/26","version":4}]}}}`)},
+	{"bridge-l3-orig", []byte(`{"cniexp":{"cnitype":"macvlan","ip":"10.10.0.1/16","env":{"CNI_COMMAND":"ADD","CNI_IFNAME":"eth0"}},"cniconf":{"cniVersion":"0.3.1","name": "bridge_l3","type": "bridge","bridge": "mynet0","isDefaultGateway": true,"forceAddress": false,"ipMasq": true,"hairpinMode": true,"ipam": {"type": "host-local","subnet": "10.10.0.0/16"}}}`)},
+	{"bridge-l2-orig", []byte(`{"cniexp":{"cnitype":"macvlan","env":{"CNI_COMMAND":"ADD","CNI_IFNAME":"eth0"}},"cniconf":{"cniVersion":"0.3.1","name": "bridge_l2","type": "bridge","bridge": "mynet0"}}`)},
+	{"bridge-l3-ip6", []byte(`{"cniexp":{"cnitype":"macvlan","ip6":"2a00:8a00:a000:1193::/64","env":{"CNI_COMMAND":"ADD","CNI_IFNAME":"eth0"}},"cniconf":{"cniVersion":"0.3.1","name": "bridge_l3","type": "bridge","bridge": "mynet0","isDefaultGateway": true,"forceAddress": false,"ipMasq": true,"hairpinMode": true,"ipam": {"type": "fakeipam"}}}`)},
+	{"bridge-l3-ds", []byte(`{"cniexp":{"cnitype":"macvlan","ip":"192.168.1.65/26","ip6":"2a00:8a00:a000:1193::/64","env":{"CNI_COMMAND":"ADD","CNI_IFNAME":"eth0"}},"cniconf":{"cniVersion":"0.3.1","name": "bridge_l3","type": "bridge","bridge": "mynet0","isDefaultGateway": true,"forceAddress": false,"ipMasq": true,"hairpinMode": true,"ipam": {"type": "fakeipam","ips":[{"ipcidr":"192.168.1.65/26","version":4}]}}}`)},
+	{"deletebridge", []byte(`{"cniexp":{"cnitype":"macvlan","env":{"CNI_COMMAND":"DEL","CNI_IFNAME":"eth0"}},"cniconf":{"cniVersion":"0.3.1","name": "bridge_l2","type": "bridge","bridge": "mynet0","ipam": {"type": "fakeipam","ips":[{"ipcidr":"192.168.1.65/26","version":4}]}}}`)},
+	{"deletebridge-wo-ipam", []byte(`{"cniexp":{"cnitype":"macvlan","env":{"CNI_COMMAND":"DEL","CNI_IFNAME":"eth0"}},"cniconf":{"cniVersion":"0.3.1","name": "bridge_l2","type": "bridge","bridge": "mynet0"}}`)},
 }
 
 var testCniConfFiles = []CniConf{
@@ -279,7 +279,7 @@ var delDeleteTcs = []struct {
 }
 
 func TestIsDelegationRequired(t *testing.T) {
-	t.Skip("CNI DEL tests actually run on the SUT therefore require a specialized executor container")
+	//	t.Skip("CNI DEL tests actually run on the SUT therefore require a specialized executor container")
 	for _, tc := range delegationRequiredTcs {
 		t.Run(tc.netName, func(t *testing.T) {
 			dnet := utils.GetTestNet(tc.netName, testNets)
@@ -292,7 +292,7 @@ func TestIsDelegationRequired(t *testing.T) {
 }
 
 func TestIsDeviceNeeded(t *testing.T) {
-	t.Skip("CNI DEL tests actually run on the SUT therefore require a specialized executor container")
+	//	t.Skip("CNI DEL tests actually run on the SUT therefore require a specialized executor container")
 	for _, tc := range isDeviceNeededTcs {
 		isDevNeeded := cnidel.IsDeviceNeeded(tc.BackendName)
 		if isDevNeeded != tc.deviceNeeded {
@@ -302,7 +302,7 @@ func TestIsDeviceNeeded(t *testing.T) {
 }
 
 func TestGetEnv(t *testing.T) {
-	t.Skip("CNI DEL tests actually run on the SUT therefore require a specialized executor container")
+	//	t.Skip("CNI DEL tests actually run on the SUT therefore require a specialized executor container")
 	testEnvKey := "HOTEL"
 	testEnvVal := "trivago"
 	os.Setenv(testEnvKey, testEnvVal)
@@ -318,7 +318,7 @@ func TestGetEnv(t *testing.T) {
 }
 
 func TestDelegateInterfaceSetup(t *testing.T) {
-	t.Skip("CNI DEL tests actually run on the SUT therefore require a specialized executor container")
+	//	t.Skip("CNI DEL tests actually run on the SUT therefore require a specialized executor container")
 	err := setupDelTest("ADD")
 	if err != nil {
 		t.Errorf("Test suite could not be set-up because:%s", err.Error())
@@ -365,7 +365,7 @@ func TestDelegateInterfaceSetup(t *testing.T) {
 }
 
 func TestDelegateInterfaceDelete(t *testing.T) {
-	t.Skip("CNI DEL tests actually run on the SUT therefore require a specialized executor container")
+	//	t.Skip("CNI DEL tests actually run on the SUT therefore require a specialized executor container")
 	err := setupDelTest("DEL")
 	if err != nil {
 		t.Errorf("Test suite could not be set-up because:%s", err.Error())

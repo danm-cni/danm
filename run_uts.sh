@@ -13,8 +13,8 @@ fi
 
 echo 'Running DANM UT'
 docker run --rm \
-  -v ${DIR}/ut/logs:/var/log \
-  -v ${DIR}/ut/coverage:/coverage \
+  -v ${DIR}/scm/ut/logs:/var/log \
+  -v ${DIR}/scm/ut/coverage:/coverage \
   ${TAG_PREFIX}builder:${COMMIT_HASH} \
   scm/ut/run_uts.sh
 

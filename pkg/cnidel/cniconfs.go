@@ -14,11 +14,16 @@ import (
 
 // This function creates CNI configuration for all static-level backends
 // The CNI binary matching with NetworkType is invoked with the CNI config file matching with NetworkID parameter
-func readCniConfigFile(cniconfDir string, netInfo *danmtypes.DanmNet, ipamOptions datastructs.IpamConfig) ([]byte, error) {
+func getStaticCniConfig(cniconfDir string, netInfo *danmtypes.DanmNet, ipamOptions datastructs.IpamConfig) ([]byte, error) {
 	cniConfig := netInfo.Spec.NetworkID
 	rawConfig, err := os.ReadFile(cniconfDir + "/" + cniConfig + ".conf")
 	if err != nil {
 		return nil, errors.New("Could not load CNI config file: " + cniConfig + ".conf for plugin:" + netInfo.Spec.NetworkType + " from directory:" + cniconfDir)
+	}
+	rawConfig = netcontrol.PatchCniConf(rawConfig, "name", netInfo.Spec.NetworkID)
+	hostDevice := netcontrol.DetermineHostDeviceName(netInfo)
+	if hostDevice != "" {
+		rawConfig = netcontrol.PatchCniConf(rawConfig, "master", hostDevice)
 	}
 	//Only overwrite "ipam" of the static CNI config if user wants
 	if len(ipamOptions.Ips) > 0 {

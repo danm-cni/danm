@@ -6,7 +6,7 @@ ARG GID=147
 #
 # Stage: Build container. Used to build all binaries, once
 #
-FROM golang:1.13-alpine3.10 AS builder
+FROM golang:1.26-alpine3.24 AS builder
 MAINTAINER Levente Kale <levente.kale@gmail.com>
 
 ARG USERNAME
@@ -32,7 +32,7 @@ RUN scm/build/build.sh \
 # (Intermediate) Stage: Alping base image. Includes common user account and environment
 #                       for netwatcher, svcwatcher, webhook
 #
-FROM alpine:3.11 AS base-alpine
+FROM alpine:3.24 AS base-alpine
 ARG USERNAME
 ARG UID
 ARG GID
@@ -80,7 +80,7 @@ ENTRYPOINT ["/usr/local/bin/webhook"]
 # Note that unlike the other containers, this needs to run as root as
 # it places CNI plugins into the host's filesystem.
 #
-FROM alpine:3.11 AS danm-cni-plugins
+FROM alpine:3.24 AS danm-cni-plugins
 
 VOLUME ["/host/cni"]
 
