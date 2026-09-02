@@ -164,6 +164,8 @@ var validateNetworkTcs = []struct {
 	{"NotOkayToAccidentallyLowerExplicitMtuConnectedTNet", "mtuOldZero", "mtuNewLow", TnetType, v1beta1.Update, nidMappings, mtuTnet, true, nil, 0},
 	{"NotOkayToAccidentallyLowerExplicitMtuConnectedCNet", "mtuOldZero", "mtuNewLow", CnetType, v1beta1.Update, nil, mtuCnet, true, nil, 0},
 	{"OkayToUnsetExplicitMtuCNet", "mtuNewLow", "mtuOldZero", CnetType, v1beta1.Update, nil, mtuCnet, false, nil, 0},
+	{"CreateStaticCnetWithVxlan", "", "cnet-vxlan", CnetType, v1beta1.Create, nil, nil, false, nil, 0},
+	{"CreateStaticTnetWithVxlan", "", "tnet-static-vxlan", TnetType, v1beta1.Create, twoDevs, nil, false, allocAndPoolAndVxlan, 1},
 }
 
 var (
@@ -408,6 +410,14 @@ var (
 			ObjectMeta: meta_v1.ObjectMeta{Name: "mtuNewLow", Namespace: "mtu-test"},
 			Spec:       danmtypes.DanmNetSpec{NetworkType: "ipvlan", NetworkID: "nanomsg", Options: danmtypes.DanmNetOption{Device: "ens4", Vxlan: 1200, Mtu: 1300}},
 		},
+		{
+			ObjectMeta: meta_v1.ObjectMeta{Name: "cnet-vxlan"},
+			Spec:       danmtypes.DanmNetSpec{NetworkType: "somethingWithHostDevice", NetworkID: "staticvx", Options: danmtypes.DanmNetOption{Device: "ens4", Vxlan: 5100}},
+		},
+		{
+			ObjectMeta: meta_v1.ObjectMeta{Name: "tnet-static-vxlan"},
+			Spec:       danmtypes.DanmNetSpec{NetworkType: "somethingWithHostDevice", NetworkID: "staticvx", Options: danmtypes.DanmNetOption{Cidr: "37.0.0.0/9", Device: "ens4"}},
+		},
 	}
 )
 
@@ -450,6 +460,11 @@ var (
 		{Path: "/spec/Options/vxlan"},
 		{Path: "/spec/Options/alloc6"},
 		{Path: "/spec/Options/allocation_pool_v6"},
+	}
+	allocAndPoolAndVxlan = []admit.Patch{
+		{Path: "/spec/Options/alloc"},
+		{Path: "/spec/Options/allocation_pool"},
+		{Path: "/spec/Options/vxlan"},
 	}
 )
 

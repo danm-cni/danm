@@ -34,7 +34,8 @@ func (validator *Validator) DeleteNetwork(responseWriter http.ResponseWriter, re
 			errors.New("Network cannot be deleted because there are Pods still connected to it e.g. Pod:"+connectedEp.Spec.Pod+" in namespace:"+connectedEp.ObjectMeta.Namespace))
 		return
 	}
-	if oldManifest.TypeMeta.Kind == "TenantNetwork" && IsTypeDynamic(oldManifest.Spec.NetworkType) {
+	if oldManifest.TypeMeta.Kind == "TenantNetwork" &&
+		(oldManifest.Spec.Options.Vlan != 0 || oldManifest.Spec.Options.Vxlan != 0) {
 		tconf, err := confman.GetTenantConfig(validator.Client)
 		if err != nil {
 			SendErroneousAdmissionResponse(responseWriter, admissionReview.Request,

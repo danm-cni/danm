@@ -113,6 +113,10 @@ var (
 				"flannel": "abcdefghijkl",
 				"sriov":   "abcdefghijkl",
 			},
+			HostDevices: []danmtypes.IfaceProfile{
+				{Name: "ens4", VniType: "vxlan", VniRange: "700-710", Alloc: utils.AllocFor5k},
+				{Name: "nokia.k8s.io/sriov_ens1f0", VniType: "vlan", VniRange: "700-710"},
+			},
 		},
 		danmtypes.TenantConfig{
 			ObjectMeta: meta_v1.ObjectMeta{Name: "shortnid"}, TypeMeta: meta_v1.TypeMeta{Kind: "TenantConfig"},

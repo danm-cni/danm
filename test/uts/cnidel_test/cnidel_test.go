@@ -124,6 +124,10 @@ var testNets = []danmtypes.DanmNet{
 		ObjectMeta: meta_v1.ObjectMeta{Name: "full-bridge"},
 		Spec:       danmtypes.DanmNetSpec{NetworkType: "bridge", NetworkID: "bridge_l2", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26"}},
 	},
+	{
+		ObjectMeta: meta_v1.ObjectMeta{Name: "static-host-device"},
+		Spec:       danmtypes.DanmNetSpec{NetworkType: "genericStatic", NetworkID: "statdev", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26", Device: "eno1", Vxlan: 6200, Mtu: 8950}},
+	},
 }
 
 var expectedCniConfigs = []CniConf{
@@ -146,6 +150,7 @@ var expectedCniConfigs = []CniConf{
 	{"bridge-l3-ds", []byte(`{"cniexp":{"cnitype":"macvlan","ip":"192.168.1.65/26","ip6":"2a00:8a00:a000:1193::/64","env":{"CNI_COMMAND":"ADD","CNI_IFNAME":"eth0"}},"cniconf":{"cniVersion":"0.3.1","name": "bridge_l3","type": "bridge","bridge": "mynet0","isDefaultGateway": true,"forceAddress": false,"ipMasq": true,"hairpinMode": true,"ipam": {"type": "fakeipam","ips":[{"ipcidr":"192.168.1.65/26","version":4}]}}}`)},
 	{"deletebridge", []byte(`{"cniexp":{"cnitype":"macvlan","env":{"CNI_COMMAND":"DEL","CNI_IFNAME":"eth0"}},"cniconf":{"cniVersion":"0.3.1","name": "bridge_l2","type": "bridge","bridge": "mynet0","ipam": {"type": "fakeipam","ips":[{"ipcidr":"192.168.1.65/26","version":4}]}}}`)},
 	{"deletebridge-wo-ipam", []byte(`{"cniexp":{"cnitype":"macvlan","env":{"CNI_COMMAND":"DEL","CNI_IFNAME":"eth0"}},"cniconf":{"cniVersion":"0.3.1","name": "bridge_l2","type": "bridge","bridge": "mynet0"}}`)},
+	{"static-vxlan", []byte(`{"cniexp":{"cnitype":"genericStatic","ip":"192.168.1.65/26","env":{"CNI_COMMAND":"ADD","CNI_IFNAME":"eth0"}},"cniconf":{"cniVersion":"0.3.1","name":"statdev","type": "genericStatic","master":"vx_statdev","mtu":8950,"ipam":{"type":"fakeipam","ips":[{"ipcidr":"192.168.1.65/26","version":4}]}}}`)},
 }
 
 var testCniConfFiles = []CniConf{
@@ -153,6 +158,7 @@ var testCniConfFiles = []CniConf{
 	{"bridge_l3.conf", []byte(`{"cniVersion":"0.3.1","name": "mynet","type": "bridge","bridge": "mynet0","isDefaultGateway": true,"forceAddress": false,"ipMasq": true,"hairpinMode": true,"ipam": {"type": "host-local","subnet": "10.10.0.0/16"}}`)},
 	{"bridge_l2.conf", []byte(`{"cniVersion":"0.3.1","name": "mynet","type": "bridge","bridge": "mynet0"}`)},
 	{"bridge_invalid.conf", []byte(`{"cniVersion":"0.3.1","name": "mynet","type": "bridge","bridge": "myne`)},
+	{"statdev.conf", []byte(`{"cniVersion":"0.3.1","name": "mynet","type": "genericStatic","master": "wlo1","mtu": 1500,"ipam": {"type": "host-local","subnet": "10.10.0.0/16"}}`)},
 }
 
 var testEps = []danmtypes.DanmEp{
@@ -207,6 +213,10 @@ var testEps = []danmtypes.DanmEp{
 		ObjectMeta: meta_v1.ObjectMeta{Name: "withForeignAddressSimple"},
 		Spec:       danmtypes.DanmEpSpec{Iface: danmtypes.DanmEpIface{Name: "eth0", Address: "10.244.1.10/24"}},
 	},
+	{
+		ObjectMeta: meta_v1.ObjectMeta{Name: "staticWithAddress"},
+		Spec:       danmtypes.DanmEpSpec{Iface: danmtypes.DanmEpIface{Name: "eth0", Address: "192.168.1.65/26"}},
+	},
 }
 
 var delegationRequiredTcs = []struct {
@@ -246,6 +256,7 @@ var delSetupTcs = []struct {
 	{"staticCniNoConfig", "no-conf", "noIps", "", "", "", true, false},
 	{"staticCniNoBinary", "no-binary", "noIps", "flannel", "", "", true, false},
 	{"staticCniWithIp", "flannel-test", "noIps", "flannel-ip", "10.244.10.30", "", false, false},
+	{"staticCniIpVxlanMtu", "static-host-device", "staticWithAddress", "static-vxlan", "192.168.1.65", "", false, true},
 	{"dynamicMacvlanIpv4", "macvlan-v4", "dynamicIpv4", "macvlan-ip4", "192.168.1.65", "", false, true},
 	{"dynamicMacvlanIpv6", "macvlan-v6", "dynamicIpv6", "macvlan-ip6", "", "2a00:8a00:a000:1193", false, true},
 	{"dynamicMacvlanDualStack", "macvlan-ds", "dynamicDual", "macvlan-dual-stack", "192.168.1.65", "2a00:8a00:a000:1193", false, true},
@@ -430,7 +441,7 @@ func setupDelTest(opType string) error {
 	if err != nil {
 		return err
 	}
-	testPlugins := [4]string{"flannel", "macvlan", "sriov", "bridge"}
+	testPlugins := [5]string{"flannel", "macvlan", "sriov", "bridge", "genericStatic"}
 	for _, plugin := range testPlugins {
 		os.RemoveAll(filepath.Join(cniTesterDir, plugin))
 		input, err := os.ReadFile(filepath.Join(os.Getenv("GOPATH"), "bin", "cnitest"))

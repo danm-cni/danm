@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -60,15 +60,15 @@ func testSetup(args *skel.CmdArgs) error {
 	var tcConf TestConfig
 	expectedCniConf, err := os.ReadFile(cniTestConfigFile)
 	if err != nil {
-		return errors.New("could not read expected CNI config from disk, because:" + err.Error())
+		return fmt.Errorf("could not read expected CNI config from disk, because: %w", err)
 	}
 	err = json.Unmarshal(expectedCniConf, &tcConf)
 	if err != nil {
-		return errors.New("could not unmarshal test CNI config, because:" + err.Error())
+		return fmt.Errorf("could not unmarshal test CNI config, because: %w", err)
 	}
 	err = checkEnvVars(tcConf.Env)
 	if err != nil {
-		return errors.New("ENV variables were not set to expected value:" + err.Error())
+		return fmt.Errorf("ENV variables were not set to expected value: %w", err)
 	}
 	switch tcConf.CniExpectations.CniType {
 	case "sriov":
@@ -77,6 +77,8 @@ func testSetup(args *skel.CmdArgs) error {
 		err = validateMacvlanConfig(args.StdinData, expectedCniConf, tcConf)
 	case "flannel":
 		err = validateFlannelConfig(args.StdinData, expectedCniConf)
+	case "genericStatic":
+		err = validateStaticConfig(args.StdinData, expectedCniConf)
 	}
 	if err != nil {
 		return err
@@ -94,7 +96,7 @@ func checkEnvVars(vars map[string]string) error {
 	for key, expValue := range vars {
 		realValue := os.Getenv(key)
 		if realValue != expValue {
-			return errors.New("expected env value:" + expValue + " for key:" + key + " does not match observed env value:" + realValue)
+			return fmt.Errorf("expected env value: %v for key: %v does not match observed env value: %v", expValue, key, realValue)
 		}
 	}
 	return nil
@@ -104,17 +106,17 @@ func validateSriovConfig(receivedCniConfig, expectedCniConfig []byte) error {
 	var recSriovConf cnidel.SriovNet
 	err := json.Unmarshal(receivedCniConfig, &recSriovConf)
 	if err != nil {
-		return errors.New("Received SR-IOV config could not be unmarshalled, because:" + err.Error())
+		return fmt.Errorf("Received SR-IOV config could not be unmarshalled, because: %w", err)
 	}
 	log.Printf("Received SR-IOV config:%v", recSriovConf)
 	var expSriovConf SriovCniTestConfig
 	err = json.Unmarshal(expectedCniConfig, &expSriovConf)
 	if err != nil {
-		return errors.New("Expected SR-IOV config could not be unmarshalled, because:" + err.Error())
+		return fmt.Errorf("Expected SR-IOV config could not be unmarshalled, because: %w", err)
 	}
 	log.Printf("Expected SR-IOV config:%v", expSriovConf.CniConf)
 	if !reflect.DeepEqual(recSriovConf, expSriovConf.CniConf) {
-		return errors.New("Received SR-IOV delegate configuration does not match with expected!")
+		return fmt.Errorf("Received SR-IOV delegate configuration does not match with expected!")
 	}
 	return nil
 }
@@ -123,17 +125,17 @@ func validateMacvlanConfig(receivedCniConfig, expectedCniConfig []byte, tcConf T
 	var recMacvlanConf cnidel.MacvlanNet
 	err := json.Unmarshal(receivedCniConfig, &recMacvlanConf)
 	if err != nil {
-		return errors.New("Received CNI config could not be unmarshalled, because:" + err.Error())
+		return fmt.Errorf("Received CNI config could not be unmarshalled, because: %w", err)
 	}
-	log.Printf("Received CNI config:%v", recMacvlanConf)
+	log.Printf("Received MACVLAN CNI config:%v", recMacvlanConf)
 	var expMacvlanConf MacvlanCniTestConfig
 	err = json.Unmarshal(expectedCniConfig, &expMacvlanConf)
 	if err != nil {
-		return errors.New("Expected CNI config could not be unmarshalled, because:" + err.Error())
+		return fmt.Errorf("Expected CNI config could not be unmarshalled, because: %w", err)
 	}
 	if tcConf.CniExpectations.Ip6 != "" {
 		if recMacvlanConf.Ipam.Ips == nil {
-			return errors.New("Received CNI config does not contain IPv6 address under ipam section, but it shall!")
+			return fmt.Errorf("Received CNI config does not contain IPv6 address under ipam section, but it shall!")
 		}
 		newIpamConfig := datastructs.IpamConfig{Type: "fakeipam"}
 		for _, ip := range recMacvlanConf.Ipam.Ips {
@@ -146,7 +148,7 @@ func validateMacvlanConfig(receivedCniConfig, expectedCniConfig []byte, tcConf T
 	}
 	log.Printf("Expected config:%v", expMacvlanConf.CniConf)
 	if !reflect.DeepEqual(recMacvlanConf, expMacvlanConf.CniConf) {
-		return errors.New("Received delegate configuration does not match with expected!")
+		return fmt.Errorf("Received delegate configuration does not match with expected!")
 	}
 	return nil
 }
@@ -155,17 +157,36 @@ func validateFlannelConfig(receivedCniConfig, expectedCniConfig []byte) error {
 	var recFlannelConf FlannelConf
 	err := json.Unmarshal(receivedCniConfig, &recFlannelConf)
 	if err != nil {
-		return errors.New("Received Flannel config could not be unmarshalled, because:" + err.Error())
+		return fmt.Errorf("Received Flannel config could not be unmarshalled, because: %w", err)
 	}
 	log.Printf("Received Flannel config:%v", recFlannelConf)
 	var expFlannelConf FlannelCniTestConfig
 	err = json.Unmarshal(expectedCniConfig, &expFlannelConf)
 	if err != nil {
-		return errors.New("Expected Flannel config could not be unmarshalled, because:" + err.Error())
+		return fmt.Errorf("Expected Flannel config could not be unmarshalled, because: %w", err)
 	}
 	log.Printf("Expected Flannel config:%v", expFlannelConf.CniConf)
 	if !reflect.DeepEqual(recFlannelConf, expFlannelConf.CniConf) {
-		return errors.New("Received Flannel delegate configuration does not match with expected!")
+		return fmt.Errorf("Received Flannel delegate configuration does not match with expected!")
+	}
+	return nil
+}
+
+func validateStaticConfig(receivedCniConfig, expectedCniConfig []byte) error {
+	var recStaticConf cnidel.MacvlanNet
+	err := json.Unmarshal(receivedCniConfig, &recStaticConf)
+	if err != nil {
+		return fmt.Errorf("Received CNI config could not be unmarshalled, because: %w", err)
+	}
+	log.Printf("Received Static CNI config:%v", recStaticConf)
+	var expStaticConf MacvlanCniTestConfig
+	err = json.Unmarshal(expectedCniConfig, &expStaticConf)
+	if err != nil {
+		return fmt.Errorf("Expected CNI config could not be unmarshalled, because: %w", err)
+	}
+	log.Printf("Expected Static config:%v", expStaticConf.CniConf)
+	if !reflect.DeepEqual(recStaticConf, expStaticConf.CniConf) {
+		return fmt.Errorf("Received Static delegate configuration does not match with expected!")
 	}
 	return nil
 }
@@ -210,15 +231,15 @@ func testDelete(args *skel.CmdArgs) error {
 	var tcConf TestConfig
 	expectedCniConf, err := os.ReadFile(cniTestConfigFile)
 	if err != nil {
-		return errors.New("DEL could not read expected CNI config from disk, because:" + err.Error())
+		return fmt.Errorf("DEL could not read expected CNI config from disk, because: %w", err)
 	}
 	err = json.Unmarshal(expectedCniConf, &tcConf)
 	if err != nil {
-		return errors.New("DEL could not unmarshal test CNI config, because:" + err.Error())
+		return fmt.Errorf("DEL could not unmarshal test CNI config, because: %w", err)
 	}
 	err = checkEnvVars(tcConf.Env)
 	if err != nil {
-		return errors.New("DEL ENV variables were not set to expected value:" + err.Error())
+		return fmt.Errorf("DEL ENV variables were not set to expected value: %w", err)
 	}
 	switch tcConf.CniExpectations.CniType {
 	case "macvlan":

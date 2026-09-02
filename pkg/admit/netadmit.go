@@ -139,8 +139,11 @@ func addTenantSpecificDetails(danmClient danmclientset.Interface, tnet *danmtype
 	if err != nil {
 		return err
 	}
-	if IsTypeDynamic(tnet.Spec.NetworkType) {
-		err = allocateDetailsForDynamicBackends(danmClient, tnet, tconf)
+	//For Device or DevicePool based dynamic CNIs there is always a physical detail which needs to be dynamically allocated
+	//For static CNIs there may or may not be. For now we will rely on the net administrator to give us a hint,
+	// if host device name is provided we will take it as an indication that DANM needs to assign and set up L2/L3 connectivity.
+	if IsTypeDynamic(tnet.Spec.NetworkType) || tnet.Spec.Options.Device != "" {
+		err = allocateDetails(danmClient, tnet, tconf)
 		if err != nil {
 			return err
 		}
@@ -155,7 +158,7 @@ func addTenantSpecificDetails(danmClient danmclientset.Interface, tnet *danmtype
 	return nil
 }
 
-func allocateDetailsForDynamicBackends(danmClient danmclientset.Interface, tnet *danmtypes.DanmNet, tconf *danmtypes.TenantConfig) error {
+func allocateDetails(danmClient danmclientset.Interface, tnet *danmtypes.DanmNet, tconf *danmtypes.TenantConfig) error {
 	var pfProfiles []danmtypes.IfaceProfile
 	for _, iface := range tconf.HostDevices {
 		if tnet.Spec.Options.DevicePool != "" && tnet.Spec.Options.DevicePool == iface.Name {

@@ -12,7 +12,7 @@ import (
 	"github.com/danm-cni/danm/pkg/datastructs"
 	"github.com/danm-cni/danm/pkg/ipam"
 	"github.com/danm-cni/danm/pkg/mtu"
-	admissionv1 "k8s.io/api/admission/v1beta1"
+	admv1beta1 "k8s.io/api/admission/v1beta1"
 	"k8s.io/utils/cpuset"
 )
 
@@ -31,7 +31,7 @@ var (
 	}
 )
 
-type ValidatorFunc func(oldManifest, newManifest *danmtypes.DanmNet, opType admissionv1.Operation, client danmclientset.Interface) error
+type ValidatorFunc func(oldManifest, newManifest *danmtypes.DanmNet, opType admv1beta1.Operation, client danmclientset.Interface) error
 type ValidatorMapping []ValidatorFunc
 
 func filterVnis(origSet cpuset.CPUSet) cpuset.CPUSet {
@@ -50,11 +50,11 @@ func filterVnis(origSet cpuset.CPUSet) cpuset.CPUSet {
 	return finalVnis
 }
 
-func validateIpv4Fields(oldManifest, newManifest *danmtypes.DanmNet, opType admissionv1.Operation, client danmclientset.Interface) error {
+func validateIpv4Fields(oldManifest, newManifest *danmtypes.DanmNet, opType admv1beta1.Operation, client danmclientset.Interface) error {
 	return validateIpFields(newManifest.Spec.Options.Cidr, newManifest.Spec.Options.Routes)
 }
 
-func validateIpv6Fields(oldManifest, newManifest *danmtypes.DanmNet, opType admissionv1.Operation, client danmclientset.Interface) error {
+func validateIpv6Fields(oldManifest, newManifest *danmtypes.DanmNet, opType admv1beta1.Operation, client danmclientset.Interface) error {
 	return validateIpFields(newManifest.Spec.Options.Net6, newManifest.Spec.Options.Routes6)
 }
 
@@ -77,8 +77,8 @@ func validateIpFields(cidr string, routes map[string]string) error {
 	return nil
 }
 
-func validateAllocationPools(oldManifest, newManifest *danmtypes.DanmNet, opType admissionv1.Operation, client danmclientset.Interface) error {
-	if opType == admissionv1.Create &&
+func validateAllocationPools(oldManifest, newManifest *danmtypes.DanmNet, opType admv1beta1.Operation, client danmclientset.Interface) error {
+	if opType == admv1beta1.Create &&
 		(newManifest.Spec.Options.Alloc != "" || newManifest.Spec.Options.Alloc6 != "") {
 		return errors.New("Allocation bitmasks shall not be manually defined upon creation!")
 	}
@@ -164,7 +164,7 @@ func validateAllocV6(newManifest *danmtypes.DanmNet) error {
 	return nil
 }
 
-func validateVids(oldManifest, newManifest *danmtypes.DanmNet, opType admissionv1.Operation, client danmclientset.Interface) error {
+func validateVids(oldManifest, newManifest *danmtypes.DanmNet, opType admv1beta1.Operation, client danmclientset.Interface) error {
 	isVlanDefined := (newManifest.Spec.Options.Vlan != 0)
 	isVxlanDefined := (newManifest.Spec.Options.Vxlan != 0)
 	if isVlanDefined && isVxlanDefined {
@@ -173,31 +173,31 @@ func validateVids(oldManifest, newManifest *danmtypes.DanmNet, opType admissionv
 	return nil
 }
 
-func validateNetworkId(oldManifest, newManifest *danmtypes.DanmNet, opType admissionv1.Operation, client danmclientset.Interface) error {
+func validateNetworkId(oldManifest, newManifest *danmtypes.DanmNet, opType admv1beta1.Operation, client danmclientset.Interface) error {
 	if newManifest.Spec.NetworkID == "" {
 		return errors.New("Spec.NetworkID mandatory parameter is missing!")
 	}
-	if len(newManifest.Spec.NetworkID) > MaxNidLength && IsTypeDynamic(newManifest.Spec.NetworkType) &&
+	if len(newManifest.Spec.NetworkID) > MaxNidLength &&
 		(newManifest.Spec.Options.Vxlan != 0 || newManifest.Spec.Options.Vlan != 0) {
 		return errors.New("Spec.NetworkID cannot be longer than " + strconv.Itoa(MaxNidLength) + " characters (otherwise VLAN and VxLAN host interface creation might fail)!")
 	}
 	return nil
 }
 
-func validateAbsenceOfAllowedTenants(oldManifest, newManifest *danmtypes.DanmNet, opType admissionv1.Operation, client danmclientset.Interface) error {
+func validateAbsenceOfAllowedTenants(oldManifest, newManifest *danmtypes.DanmNet, opType admv1beta1.Operation, client danmclientset.Interface) error {
 	if newManifest.Spec.AllowedTenants != nil {
 		return errors.New("AllowedTenants attribute is only valid for the ClusterNetwork API!")
 	}
 	return nil
 }
 
-func validateTenantNetRules(oldManifest, newManifest *danmtypes.DanmNet, opType admissionv1.Operation, client danmclientset.Interface) error {
-	if opType == admissionv1.Create &&
+func validateTenantNetRules(oldManifest, newManifest *danmtypes.DanmNet, opType admv1beta1.Operation, client danmclientset.Interface) error {
+	if opType == admv1beta1.Create &&
 		(newManifest.Spec.Options.Vxlan != 0 ||
 			newManifest.Spec.Options.Vlan != 0) {
 		return errors.New("Manually configuring Spec.Options.vlan, or Spec.Options.vxlan attributes is not allowed for TenantNetworks!")
 	}
-	if opType == admissionv1.Update &&
+	if opType == admv1beta1.Update &&
 		(newManifest.Spec.Options.Device != oldManifest.Spec.Options.Device ||
 			newManifest.Spec.Options.DevicePool != oldManifest.Spec.Options.DevicePool ||
 			newManifest.Spec.Options.Vxlan != oldManifest.Spec.Options.Vxlan ||
@@ -207,7 +207,7 @@ func validateTenantNetRules(oldManifest, newManifest *danmtypes.DanmNet, opType 
 	return nil
 }
 
-func validateTenantconfig(oldManifest, newManifest *danmtypes.TenantConfig, opType admissionv1.Operation) error {
+func validateTenantconfig(oldManifest, newManifest *danmtypes.TenantConfig, opType admv1beta1.Operation) error {
 	if len(newManifest.HostDevices) == 0 && len(newManifest.NetworkIds) == 0 {
 		return errors.New("Either hostDevices, or networkIds must be provided!")
 	}
@@ -222,14 +222,14 @@ func validateTenantconfig(oldManifest, newManifest *danmtypes.TenantConfig, opTy
 		if nType == "" || nId == "" {
 			return errors.New("neither NetworkID, nor NetworkType can be empty in a NetworkID mapping!")
 		}
-		if len(nId) > MaxNidLength && IsTypeDynamic(nType) {
-			return errors.New("NetworkID:" + nId + " cannot be longer than " + strconv.Itoa(MaxNidLength) + " characters (otherwise VLAN and VxLAN host interface creation might fail)!")
+		if len(nId) > MaxNidLength && len(newManifest.HostDevices) > 0 {
+			return errors.New("NetworkID:" + nId + " cannot be longer than " + strconv.Itoa(MaxNidLength) + " characters when HostDevices is present (otherwise VLAN and VxLAN host interface creation might fail due to kernel iface name length restriction)!")
 		}
 	}
 	return nil
 }
 
-func validateIfaceConfig(ifaceConf danmtypes.IfaceProfile, opType admissionv1.Operation) error {
+func validateIfaceConfig(ifaceConf danmtypes.IfaceProfile, opType admv1beta1.Operation) error {
 	if ifaceConf.Name == "" {
 		return errors.New("name attribute of a hostDevice must not be empty!")
 	}
@@ -240,7 +240,7 @@ func validateIfaceConfig(ifaceConf danmtypes.IfaceProfile, opType admissionv1.Op
 	if ifaceConf.VniType != "" && ifaceConf.VniType != "vlan" && ifaceConf.VniType != "vxlan" {
 		return errors.New(ifaceConf.VniType + " is not in allowed vniType values: {vlan,vxlan} for interface:" + ifaceConf.Name)
 	}
-	if opType == admissionv1.Create && ifaceConf.Alloc != "" {
+	if opType == admv1beta1.Create && ifaceConf.Alloc != "" {
 		return errors.New("Allocation bitmask for interface: " + ifaceConf.Name + " shall not be manually defined upon creation!")
 	}
 	//I know this type is for CPU sets, but isn't it just perfect for handling arbitrarily defined integer ranges?
@@ -255,7 +255,7 @@ func validateIfaceConfig(ifaceConf danmtypes.IfaceProfile, opType admissionv1.Op
 	return nil
 }
 
-func validateNeType(oldManifest, newManifest *danmtypes.DanmNet, opType admissionv1.Operation, client danmclientset.Interface) error {
+func validateNeType(oldManifest, newManifest *danmtypes.DanmNet, opType admv1beta1.Operation, client danmclientset.Interface) error {
 	if newManifest.Spec.NetworkType == "sriov" {
 		if newManifest.Spec.Options.DevicePool == "" || newManifest.Spec.Options.Device != "" {
 			return errors.New("Spec.Options.device_pool must, and Spec.Options.host_device cannot be provided for SR-IOV networks!")
@@ -266,8 +266,8 @@ func validateNeType(oldManifest, newManifest *danmtypes.DanmNet, opType admissio
 	return nil
 }
 
-func validateVniChange(oldManifest, newManifest *danmtypes.DanmNet, opType admissionv1.Operation, client danmclientset.Interface) error {
-	if opType != admissionv1.Update {
+func validateVniChange(oldManifest, newManifest *danmtypes.DanmNet, opType admv1beta1.Operation, client danmclientset.Interface) error {
+	if opType != admv1beta1.Update {
 		return nil
 	}
 	isAnyPodConnectedToNetwork, connectedEp, err := danmep.ArePodsConnectedToNetwork(client, oldManifest)
@@ -284,8 +284,8 @@ func validateVniChange(oldManifest, newManifest *danmtypes.DanmNet, opType admis
 	return nil
 }
 
-func validateMtuChange(oldManifest, newManifest *danmtypes.DanmNet, opType admissionv1.Operation, client danmclientset.Interface) error {
-	if opType != admissionv1.Update {
+func validateMtuChange(oldManifest, newManifest *danmtypes.DanmNet, opType admv1beta1.Operation, client danmclientset.Interface) error {
+	if opType != admv1beta1.Update {
 		return nil
 	}
 	isAnyPodConnectedToNetwork, connectedEp, err := danmep.ArePodsConnectedToNetwork(client, oldManifest)

@@ -182,7 +182,7 @@ func ValidateHttpResponse(writer *httpstub.ResponseWriterStub, isErrorExpected b
 		}
 	} else {
 		if !response.Allowed {
-			return errors.New("request would have been denied but we expected it to pass through validation")
+			return errors.New("request would have been denied with: " + response.Result.Message + " but we expected it to pass through validation")
 		}
 		if response.Result != nil {
 			return errors.New("an unnecessary Result message is put into a successful response")

@@ -33,6 +33,7 @@ var deleteNetworkTcs = []struct {
 	{"missingDeviceProfile", "sriov", delConf, nil, false, false, nil, 0},
 	{"errorUpdating", "ipvlan", errConf, nil, true, true, nil, 1},
 	{"freeDevice", "ipvlan", validConf, nil, false, true, nil, 1},
+	{"freeDeviceStatic", "staticWithVni", validConf, nil, false, true, nil, 1},
 	{"freeDevicePool", "sriov", validConf, nil, false, true, nil, 1},
 	{"cannotDeleteDueToError", "ipvlan", validConf, errorEp, true, false, nil, 0},
 	{"cannotDeleteDueToConnectedPods", "ipvlan", validConf, existingPods, true, false, nil, 0},
@@ -41,95 +42,100 @@ var deleteNetworkTcs = []struct {
 
 var (
 	delNets = []danmtypes.DanmNet{
-		danmtypes.DanmNet{
+		{
 			ObjectMeta: meta_v1.ObjectMeta{Name: "malformed"},
 		},
-		danmtypes.DanmNet{
+		{
 			ObjectMeta: meta_v1.ObjectMeta{Name: "invalid-type"},
 			TypeMeta:   meta_v1.TypeMeta{Kind: "DanmNet"},
 		},
-		danmtypes.DanmNet{
+		{
 			ObjectMeta: meta_v1.ObjectMeta{Name: "flannel"},
 			TypeMeta:   meta_v1.TypeMeta{Kind: "TenantNetwork"},
 			Spec:       danmtypes.DanmNetSpec{NetworkType: "flannel", NetworkID: "flannel"},
 		},
-		danmtypes.DanmNet{
+		{
 			ObjectMeta: meta_v1.ObjectMeta{Name: "ipvlan"},
 			TypeMeta:   meta_v1.TypeMeta{Kind: "TenantNetwork"},
 			Spec:       danmtypes.DanmNetSpec{NetworkType: "ipvlan", NetworkID: "nanomsg", Options: danmtypes.DanmNetOption{Device: "ens4", Vlan: 500}},
 		},
-		danmtypes.DanmNet{
+		{
 			ObjectMeta: meta_v1.ObjectMeta{Name: "sriov"},
 			TypeMeta:   meta_v1.TypeMeta{Kind: "TenantNetwork"},
 			Spec:       danmtypes.DanmNetSpec{NetworkType: "sriov", NetworkID: "e2", Options: danmtypes.DanmNetOption{DevicePool: "nokia.k8s.io/sriov_ens1f1", Vlan: 500}},
 		},
+		{
+			ObjectMeta: meta_v1.ObjectMeta{Name: "staticWithVni"},
+			TypeMeta:   meta_v1.TypeMeta{Kind: "TenantNetwork"},
+			Spec:       danmtypes.DanmNetSpec{NetworkType: "sthingWithDevice", NetworkID: "nanomsg", Options: danmtypes.DanmNetOption{Device: "ens4", Vxlan: 500}},
+		},
 	}
 	delConf = []danmtypes.TenantConfig{
-		danmtypes.TenantConfig{
+		{
 			ObjectMeta: meta_v1.ObjectMeta{Name: "tconf"},
 			HostDevices: []danmtypes.IfaceProfile{
-				danmtypes.IfaceProfile{Name: "ens6", VniType: "vxlan", VniRange: "1200-1300", Alloc: utils.ExhaustedAllocFor5k},
-				danmtypes.IfaceProfile{Name: "nokia.k8s.io/sriov_ens1f0", VniType: "vlan", VniRange: "1500-1550", Alloc: utils.ExhaustedAllocFor5k}},
+				{Name: "ens6", VniType: "vxlan", VniRange: "1200-1300", Alloc: utils.ExhaustedAllocFor5k},
+				{Name: "nokia.k8s.io/sriov_ens1f0", VniType: "vlan", VniRange: "1500-1550", Alloc: utils.ExhaustedAllocFor5k}},
 		},
 	}
 	errConf = []danmtypes.TenantConfig{
-		danmtypes.TenantConfig{
+		{
 			ObjectMeta: meta_v1.ObjectMeta{Name: "errorupdate"},
 			HostDevices: []danmtypes.IfaceProfile{
-				danmtypes.IfaceProfile{Name: "ens4", VniType: "vlan", VniRange: "1200-1300", Alloc: utils.ExhaustedAllocFor5k},
-				danmtypes.IfaceProfile{Name: "nokia.k8s.io/sriov_ens1f0", VniType: "vlan", VniRange: "1500-1550", Alloc: utils.ExhaustedAllocFor5k}},
+				{Name: "ens4", VniType: "vlan", VniRange: "1200-1300", Alloc: utils.ExhaustedAllocFor5k},
+				{Name: "nokia.k8s.io/sriov_ens1f0", VniType: "vlan", VniRange: "1500-1550", Alloc: utils.ExhaustedAllocFor5k}},
 		},
 	}
 	validConf = []danmtypes.TenantConfig{
-		danmtypes.TenantConfig{
+		{
 			ObjectMeta: meta_v1.ObjectMeta{Name: "tconf"},
 			HostDevices: []danmtypes.IfaceProfile{
-				danmtypes.IfaceProfile{Name: "ens4", VniType: "vxlan", VniRange: "400-500", Alloc: utils.ExhaustedAllocFor5k},
-				danmtypes.IfaceProfile{Name: "ens4", VniType: "vlan", VniRange: "400-500", Alloc: utils.ExhaustedAllocFor5k},
-				danmtypes.IfaceProfile{Name: "nokia.k8s.io/sriov_ens1f0", VniType: "vlan", VniRange: "500-600", Alloc: utils.ExhaustedAllocFor5k},
-				danmtypes.IfaceProfile{Name: "nokia.k8s.io/sriov_ens1f1", VniType: "vlan", VniRange: "500-600", Alloc: utils.ExhaustedAllocFor5k}},
+				{Name: "ens4", VniType: "vxlan", VniRange: "400-500", Alloc: utils.ExhaustedAllocFor5k},
+				{Name: "ens4", VniType: "vlan", VniRange: "400-500", Alloc: utils.ExhaustedAllocFor5k},
+				{Name: "nokia.k8s.io/sriov_ens1f0", VniType: "vlan", VniRange: "500-600", Alloc: utils.ExhaustedAllocFor5k},
+				{Name: "nokia.k8s.io/sriov_ens1f1", VniType: "vlan", VniRange: "500-600", Alloc: utils.ExhaustedAllocFor5k}},
 		},
 	}
 )
 
 var (
 	errorEp = []danmtypes.DanmEp{
-		danmtypes.DanmEp{
+		{
 			ObjectMeta: meta_v1.ObjectMeta{Name: "error"},
 		},
 	}
 	existingPods = []danmtypes.DanmEp{
-		danmtypes.DanmEp{
+		{
 			ObjectMeta: meta_v1.ObjectMeta{Name: "random1"},
 			Spec:       danmtypes.DanmEpSpec{ApiType: "ClusterNetwork", NetworkName: "management"},
 		},
-		danmtypes.DanmEp{
+		{
 			ObjectMeta: meta_v1.ObjectMeta{Name: "random2"},
 			Spec:       danmtypes.DanmEpSpec{ApiType: "TenantNetwork", NetworkName: "ipvlan", Pod: "blurp"},
 		},
 	}
 	notMatchingPods = []danmtypes.DanmEp{
-		danmtypes.DanmEp{
+		{
 			ObjectMeta: meta_v1.ObjectMeta{Name: "random1"},
 			Spec:       danmtypes.DanmEpSpec{ApiType: "ClusterNetwork", NetworkName: "ipvlan"},
 		},
-		danmtypes.DanmEp{
+		{
 			ObjectMeta: meta_v1.ObjectMeta{Name: "random2"},
 			Spec:       danmtypes.DanmEpSpec{ApiType: "DanmNet", NetworkName: "ipvlan"},
 		},
-		danmtypes.DanmEp{
+		{
 			ObjectMeta: meta_v1.ObjectMeta{Name: "random3"},
 			Spec:       danmtypes.DanmEpSpec{ApiType: "TenantNetwork", NetworkName: "ipvla"},
 		},
-		danmtypes.DanmEp{
+		{
 			ObjectMeta: meta_v1.ObjectMeta{Name: "random4"},
 			Spec:       danmtypes.DanmEpSpec{ApiType: "DanmNet", NetworkName: "pvlan"},
 		},
-		danmtypes.DanmEp{
+		{
 			ObjectMeta: meta_v1.ObjectMeta{Name: "random5"},
 			Spec:       danmtypes.DanmEpSpec{ApiType: "DanmNet", NetworkName: "ipVlan"},
 		},
-		danmtypes.DanmEp{
+		{
 			ObjectMeta: meta_v1.ObjectMeta{Name: "random6", Namespace: "sdm"},
 			Spec:       danmtypes.DanmEpSpec{ApiType: "TenantNetwork", NetworkName: "ipvlan"},
 		},
