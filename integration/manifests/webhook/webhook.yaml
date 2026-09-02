@@ -29,13 +29,13 @@ subjects:
   name: danm-webhook
   namespace: kube-system
 ---
-apiVersion: admissionregistration.k8s.io/v1beta1
+apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
   name: danm-webhook-config
   namespace: kube-system
 webhooks:
-  - name: danm-netvalidation.nokia.k8s.io
+  - name: danm-netvalidation.danm.io
     clientConfig:
       service:
         name: danm-webhook-svc
@@ -44,14 +44,16 @@ webhooks:
       # Configure your pre-generated certificate matching the details of your environment
       caBundle: ${CA_BUNDLE}
     rules:
-      # UPDATE IS TEMPORARILY REMOVED DUE TO:https://github.com/danm-cni/danm/issues/144
-      - operations: ["CREATE"]
+      - operations: ["CREATE", "UPDATE"]
         apiGroups: ["danm.io"]
         apiVersions: ["v1"]
         resources: ["danmnets", "clusternetworks", "tenantnetworks"]
     failurePolicy: Fail
     timeoutSeconds: 25
-  - name: danm-configvalidation.nokia.k8s.io
+    sideEffects: None
+    admissionReviewVersions:
+    - "v1beta1"
+  - name: danm-configvalidation.danm.io
     clientConfig:
       service:
         name: danm-webhook-svc
@@ -66,7 +68,10 @@ webhooks:
         resources: ["tenantconfigs"]
     failurePolicy: Fail
     timeoutSeconds: 25
-  - name: danm-netdeletion.nokia.k8s.io
+    sideEffects: None
+    admissionReviewVersions:
+    - "v1beta1"
+  - name: danm-netdeletion.danm.io
     clientConfig:
       service:
         name: danm-webhook-svc
@@ -81,6 +86,9 @@ webhooks:
         resources: ["danmnets", "clusternetworks", "tenantnetworks"]
     failurePolicy: Fail
     timeoutSeconds: 25
+    sideEffects: None
+    admissionReviewVersions:
+    - "v1beta1"
 ---
 apiVersion: v1
 kind: Service
@@ -110,14 +118,6 @@ spec:
      danm: webhook
   template:
     metadata:
-      annotations:
-        # Adapt to your own network environment!
-        danm.io/interfaces: |
-          [
-            {
-              "network":"flannel"
-            }
-          ]
       name: danm-webhook
       labels:
         danm: webhook
@@ -126,7 +126,7 @@ spec:
       containers:
         - name: danm-webhook
           image: webhook
-          command: ["/usr/local/bin/webhook", "-tls-cert-bundle=/etc/webhook/certs/cert.pem", "-tls-private-key-file=/etc/webhook/certs/key.pem", "bind-port=8443"]
+          command: ["/usr/local/bin/webhook", "-tls-cert-bundle=/etc/webhook/certs/cert", "-tls-private-key-file=/etc/webhook/certs/key", "bind-port=8443"]
           imagePullPolicy: IfNotPresent
           volumeMounts:
             - name: webhook-certs

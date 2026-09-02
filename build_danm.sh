@@ -104,6 +104,7 @@ fi
 # Determine which build stages we want to tag as an image.
 #
 build_targets=(netwatcher svcwatcher webhook danm-cni-plugins)
+#build_targets=()
 
 if [ -n "${KEEP_BUILDER}" ]
 then
@@ -140,22 +141,3 @@ do
   # Make sure we use the cache on the 2nd and subsequent iterations.
   unset FIRST_BUILD_EXTRA_BUILD_ARGS
 done
-
-#
-# Build the installer job image. This is a separate Dockerfile as it has no direct
-# overlap with the main binaries.
-#
-echo Building installer, version ${COMMIT_HASH}
-${BUILD_COMMAND} \
-  ${EXTRA_BUILD_ARGS} \
-  --tag ${TAG_PREFIX}danm-installer:${COMMIT_HASH} \
-  --file scm/build/Dockerfile.install \
-  .
-
-${TAG_COMMAND} ${TAG_PREFIX}danm-installer:${COMMIT_HASH} ${TAG_PREFIX}danm-installer:latest
-
-if [ -n "${IMAGE_PUSH}" ]
-then
-  ${PUSH_COMMAND} ${TAG_PREFIX}danm-installer:${COMMIT_HASH}
-  ${PUSH_COMMAND} ${TAG_PREFIX}danm-installer:latest
-fi

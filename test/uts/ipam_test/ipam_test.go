@@ -170,7 +170,7 @@ func TestFree(t *testing.T) {
 				timesUpdateWasCalled = netClientStub.DanmClient.NetClient.TimesUpdateWasCalled
 			}
 			if tc.timesUpdateShouldBeCalled != timesUpdateWasCalled {
-				t.Errorf("Network manifest should have been updated:" + strconv.Itoa(tc.timesUpdateShouldBeCalled) + " times, but it happened:" + strconv.Itoa(timesUpdateWasCalled) + " times instead")
+				t.Errorf("%s", "Network manifest should have been updated:"+strconv.Itoa(tc.timesUpdateShouldBeCalled)+" times, but it happened:"+strconv.Itoa(timesUpdateWasCalled)+" times instead")
 			}
 		})
 	}
