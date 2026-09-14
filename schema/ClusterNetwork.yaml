@@ -132,3 +132,18 @@ spec:
     # VLAN and VxLAN paramaters are mutually exclusive! Defining both in the same ClusterNetwork will result in a validation error!
     # OPTIONAL - INTEGER (e.g. 4000)
     vlan: ## VLAN_TAG ##
+#Status field holds read-only information which is either useful for Operators, or helps DANM during the execution of different provisioning steps
+#This section is automatically maintained by the Webhook, users should not and cannot provision it
+status:
+  #List of ReservedIP objects which select this network
+  reservedIPs:
+    #Reservations are tracked on a per-namespace basis so number of reads during Pod provisioning time may be optimized
+  - namespace: ## NS1 ##
+    objects:
+      #Names of ReservedIP objects in the namespace selecting the network
+    - ## RESERVED_IP1 ##
+    - ## RESERVED_IP2 ##
+  - namespace: ## NS2 ##
+    objects:
+    - ## RESERVED_IP1 ##
+    - ## RESERVED_IP2 ##

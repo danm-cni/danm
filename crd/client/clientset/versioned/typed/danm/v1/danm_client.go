@@ -15,6 +15,7 @@ type DanmV1Interface interface {
 	ClusterNetworksGetter
 	DanmEpsGetter
 	DanmNetsGetter
+	ReservedIPsGetter
 	TenantConfigsGetter
 	TenantNetworksGetter
 }
@@ -34,6 +35,10 @@ func (c *DanmV1Client) DanmEps(namespace string) DanmEpInterface {
 
 func (c *DanmV1Client) DanmNets(namespace string) DanmNetInterface {
 	return newDanmNets(c, namespace)
+}
+
+func (c *DanmV1Client) ReservedIPs(namespace string) ReservedIPInterface {
+	return newReservedIPs(c, namespace)
 }
 
 func (c *DanmV1Client) TenantConfigs() TenantConfigInterface {

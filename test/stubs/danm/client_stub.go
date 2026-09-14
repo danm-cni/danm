@@ -38,6 +38,10 @@ func (client *ClientStub) ClusterNetworks() client.ClusterNetworkInterface {
 	return nil
 }
 
+func (client *ClientStub) ReservedIPs(namespace string) client.ReservedIPInterface {
+	return nil
+}
+
 func (client *ClientStub) RESTClient() rest.Interface {
 	return nil
 }

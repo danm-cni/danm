@@ -23,6 +23,8 @@ type ClusterNetworksGetter interface {
 type ClusterNetworkInterface interface {
 	Create(ctx context.Context, clusterNetwork *danmv1.ClusterNetwork, opts metav1.CreateOptions) (*danmv1.ClusterNetwork, error)
 	Update(ctx context.Context, clusterNetwork *danmv1.ClusterNetwork, opts metav1.UpdateOptions) (*danmv1.ClusterNetwork, error)
+	// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
+	UpdateStatus(ctx context.Context, clusterNetwork *danmv1.ClusterNetwork, opts metav1.UpdateOptions) (*danmv1.ClusterNetwork, error)
 	Delete(ctx context.Context, name string, opts metav1.DeleteOptions) error
 	DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error
 	Get(ctx context.Context, name string, opts metav1.GetOptions) (*danmv1.ClusterNetwork, error)

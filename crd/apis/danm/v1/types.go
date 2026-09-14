@@ -6,18 +6,20 @@ import (
 )
 
 // +genclient
+// +genclient:noStatus
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type DanmNet struct {
 	meta_v1.TypeMeta   `json:",inline"`
 	meta_v1.ObjectMeta `json:"metadata"`
-	Spec               DanmNetSpec `json:"spec"`
+	Spec               DanmNetSpec   `json:"spec"`
+	Status             DanmNetStatus `json:"status"`
 }
 
 type DanmNetSpec struct {
 	NetworkID      string        `json:"NetworkID"`
 	NetworkType    string        `json:"NetworkType,omitempty"`
 	AllowedTenants []string      `json:"AllowedTenants,omitempty"`
-	Options        DanmNetOption `json:"Options,omitempty"`
+	Options        DanmNetOption `json:"Options"`
 }
 
 type DanmNetOption struct {
@@ -37,7 +39,7 @@ type DanmNetOption struct {
 	// bit array of tracking address allocation
 	Alloc string `json:"alloc,omitempty"`
 	// subset of the IPv4 subnet from which IPs can be allocated
-	Pool IpPool `json:"allocation_pool,omitempty"`
+	Pool IpPool `json:"allocation_pool"`
 	// IPv6 specific parameters
 	// IPv6 unique global address prefix
 	Net6 string `json:"net6,omitempty"`
@@ -46,20 +48,13 @@ type DanmNetOption struct {
 	// bit array tracking IPv6 allocations
 	Alloc6 string `json:"alloc6,omitempty"`
 	// subset of the IPv6 subnet from which IPs can be allocated
-	Pool6 IpPoolV6 `json:"allocation_pool_v6,omitempty"`
+	Pool6 IpPoolV6 `json:"allocation_pool_v6"`
 	// Routing table number for policy routing
 	RTables int `json:"rt_tables,omitempty"`
 	// the VLAN id of the VLAN interface created on top of the host device
 	Vlan int `json:"vlan,omitempty"`
 	// MTU value of associated host and container network interfaces
 	Mtu int `json:"mtu,omitempty"`
-}
-
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-type DanmNetList struct {
-	meta_v1.TypeMeta `json:",inline"`
-	meta_v1.ListMeta `json:"metadata"`
-	Items            []DanmNet `json:"items"`
 }
 
 type IpPool struct {
@@ -71,6 +66,22 @@ type IpPool struct {
 type IpPoolV6 struct {
 	IpPool
 	Cidr string `json:"cidr"`
+}
+
+type DanmNetStatus struct {
+	ReservedIPs []NetRipStatus `json:"reservedIPs,omitempty"`
+}
+
+type NetRipStatus struct {
+	Objects   []string `json:"objects"`
+	Namespace string   `json:"namespace,omitempty"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type DanmNetList struct {
+	meta_v1.TypeMeta `json:",inline"`
+	meta_v1.ListMeta `json:"metadata"`
+	Items            []DanmNet `json:"items"`
 }
 
 // +genclient
@@ -123,6 +134,7 @@ type TenantConfig struct {
 	meta_v1.ObjectMeta `json:"metadata"`
 	HostDevices        []IfaceProfile    `json:"hostDevices,omitempty"`
 	NetworkIds         map[string]string `json:"networkIds,omitempty"`
+	AllowedCNets       []AllowedCNet     `json:"allowedClusterNetworks,omitempty"`
 }
 
 type IfaceProfile struct {
@@ -130,6 +142,11 @@ type IfaceProfile struct {
 	VniType  string `json:"vniType,omitempty"`
 	VniRange string `json:"vniRange,omitempty"`
 	Alloc    string `json:"alloc,omitempty"`
+}
+
+type AllowedCNet struct {
+	Name       string   `json:"name"`
+	Privileges []string `json:"privileges"`
 }
 
 // +genclient:nonNamespaced
@@ -165,4 +182,45 @@ type ClusterNetworkList struct {
 	meta_v1.TypeMeta `json:",inline"`
 	meta_v1.ListMeta `json:"metadata"`
 	Items            []ClusterNetwork `json:"items"`
+}
+
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type ReservedIP struct {
+	meta_v1.TypeMeta   `json:",inline"`
+	meta_v1.ObjectMeta `json:"metadata"`
+	Spec               ReservedIPSpec   `json:"spec"`
+	Status             ReservedIPStatus `json:"status"`
+}
+
+type ReservedIPSpec struct {
+	Network     RipNetworkSelector `json:"network"`
+	Ips         []RipIP            `json:"ips"`
+	Description string             `json:"description,omitempty"`
+}
+
+type RipNetworkSelector struct {
+	Name string `json:"name"`
+	Type string `json:"type,omitempty"`
+}
+
+type RipIP struct {
+	Address   string `json:"address"`
+	Shareable bool   `json:"shareable,omitempty"`
+}
+
+type ReservedIPStatus struct {
+	Reservations []Reservation `json:"reservations"`
+}
+
+type Reservation struct {
+	Address string   `json:"address"`
+	Users   []string `json:"users,omitempty"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type ReservedIPList struct {
+	meta_v1.TypeMeta `json:",inline"`
+	meta_v1.ListMeta `json:"metadata"`
+	Items            []ReservedIP `json:"items"`
 }

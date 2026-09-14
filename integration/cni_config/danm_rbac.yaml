@@ -10,7 +10,11 @@ rules:
     - danmnets
     - danmeps
     - tenantnetworks
+    - tenantnetworks/status
     - clusternetworks
+    - clusternetworks/status
+    - reservedips
+    - reservedips/status
     verbs: ["*"]
   - apiGroups: [""]
     resources: ["pods"]

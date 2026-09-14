@@ -43,6 +43,8 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Danm().V1().DanmEps().Informer()}, nil
 	case v1.SchemeGroupVersion.WithResource("danmnets"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Danm().V1().DanmNets().Informer()}, nil
+	case v1.SchemeGroupVersion.WithResource("reservedips"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Danm().V1().ReservedIPs().Informer()}, nil
 	case v1.SchemeGroupVersion.WithResource("tenantconfigs"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Danm().V1().TenantConfigs().Informer()}, nil
 	case v1.SchemeGroupVersion.WithResource("tenantnetworks"):

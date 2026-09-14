@@ -49,6 +49,27 @@ spec:
             additionalProperties:
               type: string
             type: object
+          allowedClusterNetworks:
+            type: array
+            x-kubernetes-list-type: map
+            x-kubernetes-list-map-keys:
+            - name
+            items:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                privileges:
+                  type: array
+                  x-kubernetes-list-type: set
+                  minItems: 1
+                  items:
+                    type: string
+                    enum: [reservedIp]
+              required:
+              - name
+              - privileges
         required:
         - metadata
         type: object
