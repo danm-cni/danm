@@ -43,3 +43,17 @@ hostDevices:
 networkIds:
   ## NETWORKTYPE1: NETWORKID1 ##
   ## NETWORKTYPE2: NETWORKID2 ##
+# Tenant workloads may freely connect to and use features of TenantNetworks without any configuration required by either tenant, or cluster network administrators.
+# Carrying out certain operations over ClusterNetworks however may require elevated privileges. The cluster administrator can configure granular access control of these privileges via this parameter on a per-network basis.
+# This is a whitelist meaning any privileges gated behind it are forbidden to all users of all tenants by default.
+# The following list of functionalities have tenant level control implemented at the moment:
+# - reservedIp: users empowered with this privilege are able to create ReservedIP objects in their tenants referencing the ClusterNetwork
+allowedClusterNetworks:
+- name: ## NAME OF WHITELISTED CLUSTERNETWORK 1 ##
+  privileges:
+  - ## NAME OF THE FIRST PRIVILEGE ALLOWED OVER THE NETWORK ##
+  - ## NAME OF THE SECOND PRIVILEGE ALLOWED OVER THE NETWORK ##
+- name: ## NAME OF WHITELISTED CLUSTERNETWORK 2 ##
+  privileges:
+  - ## NAME OF THE FIRST PRIVILEGE ALLOWED OVER THE NETWORK ##
+  - ## NAME OF THE SECOND PRIVILEGE ALLOWED OVER THE NETWORK ##

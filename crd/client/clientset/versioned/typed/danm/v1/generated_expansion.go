@@ -8,6 +8,8 @@ type DanmEpExpansion interface{}
 
 type DanmNetExpansion interface{}
 
+type ReservedIPExpansion interface{}
+
 type TenantConfigExpansion interface{}
 
 type TenantNetworkExpansion interface{}

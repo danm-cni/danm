@@ -7,6 +7,7 @@ spec:
   group: danm.io
   names:
     kind: TenantNetwork
+    listKind: TenantNetworkList
     plural: tenantnetworks
     singular: tenantnetwork
     shortNames:
@@ -155,9 +156,27 @@ spec:
             required:
             - NetworkID
             type: object
+          status:
+            type: object
+            properties:
+              reservedIPs:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    namespace:
+                      type: string
+                    objects:
+                      type: array
+                      items:
+                        type: string
+                  required:
+                  - objects
         required:
         - metadata
         - spec
         type: object
     served: true
     storage: true
+    subresources:
+      status: {}

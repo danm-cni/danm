@@ -23,6 +23,8 @@ type TenantNetworksGetter interface {
 type TenantNetworkInterface interface {
 	Create(ctx context.Context, tenantNetwork *danmv1.TenantNetwork, opts metav1.CreateOptions) (*danmv1.TenantNetwork, error)
 	Update(ctx context.Context, tenantNetwork *danmv1.TenantNetwork, opts metav1.UpdateOptions) (*danmv1.TenantNetwork, error)
+	// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
+	UpdateStatus(ctx context.Context, tenantNetwork *danmv1.TenantNetwork, opts metav1.UpdateOptions) (*danmv1.TenantNetwork, error)
 	Delete(ctx context.Context, name string, opts metav1.DeleteOptions) error
 	DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error
 	Get(ctx context.Context, name string, opts metav1.GetOptions) (*danmv1.TenantNetwork, error)

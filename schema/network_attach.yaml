@@ -34,6 +34,7 @@ spec:
       #     Possible values:
       #     - "dynamic": the first free IPv4 address is dynamically allocated from the referenced network's allocation pool
       #     - "## DESIRED_STATIC_IPV4_ADDR_FROM_CIDR (e.g. "10.10.0.101") ##"
+      #     - "## NAME_OF_A_RESERVED_IP_OBJECT (e.g. "my-loadbalancer-ips") ##"
       #     - "none": no IPv4 is allocated to the interface
       #   "ip6": desired IPv6 address assigment scheme.
       #     Mandatory for connecting to networks with dynamic NetworkTypes, such as IPVLAN, MACVLAN, or SR-IOV.
@@ -42,6 +43,7 @@ spec:
       #     Possible values:
       #     - "dynamic": the first free IPv6 address is dynamically allocated from the referenced network's V6 allocation pool
       #     - "## DESIRED_STATIC_IPV6_ADDR_FROM_NET6 (e.g. "2a00:8a00:a000:1193::03e:2002") ##"
+      #     - "## NAME_OF_A_RESERVED_IP_OBJECT (e.g. "my-loadbalancer-ips") ##"
       #     - "none": no IPv6 address is allocated to the interface
       #   "proutes": list of policy-based IPv4 routes to be added to the configured routing table of this interface.
       #     Generally supported parameter, works with all NetworkTypes.

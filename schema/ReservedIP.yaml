@@ -1,0 +1,47 @@
+### DANM ReservedIP CRD API schema description and example ###
+apiVersion: danm.io/v1
+kind: ReservedIP
+## The ReservedIP feature allows you to preemptively reserve specific IP addresses within a DANM network, preventing them from being allocated dynamically while still allowing explicit static allocation when needed.
+## Reservations are supported on both the cluster, and the tenant level.
+## The API also allows the reservations to be shared between multiple Pods to support special high-available deployments such as load balancers, kubevirt live migration capable VMs etc.
+metadata:
+  # Name of the DANM ReservedIP object this file represents
+  # MANDATORY - String
+  name: ## OBJECT_NAME  ##
+  # The K8s namespace this namespaced object belongs to
+  # MANDATORY - String
+  namespace: ## NS_NAME  ##
+spec:
+  #ReservedIPs are always 1:1 attached to specific networks identified by this section
+  network:
+    #Name of the network object this ReservedIP belongs to. TenantNetworks can be selected only from within the namespace of the ReservedIP
+    #MANDATORY - String
+    name: my-network
+    #Type of the network object the ReservedIP belongs to
+    #OPTIONAL - Enum:{ClusterNetwork, TenantNetwork}
+    #DEFAULT: TenantNetwork
+    type: ClusterNetwork
+  #List of IP addresses the Operator wishes to be treated as reserved whenever an IP is dynamically allocated from the referenced network
+  #Both IPv4 and IPv6 addresses are supported, maximum one of each
+  # MANDATORY - LIST OF IP ADDRESSES
+  ips:
+    #The reserved IP address
+    #MANDATORY -  Standard V4 or V6 format without the subnet mask
+  - address: "192.168.1.100"
+    #Shareable defines whether DANM allows the reserved IP to be statically assigned to more than 1 Pod
+    #OPTIONAL - Bool
+    #DEFAULT: false
+    shareable: true
+  # Human-readable description of why this IP is reserved (e.g. "VM primary IP", "Database LoadBalancer" etc.)
+  #OPTIONAL - String
+  description: "Reserved for dual-stack service"
+## The ReservedIP object also holds the currently outstanding reservations which have taken place due to its existence
+## Users are not allowed to modify this list via any means, moreover a ReservedIP object cannot be deleted while it has active reservations associated with it
+status:
+  reservations:
+  # List of reserved addresses currently assigned to at least one Pod
+  - address: 192.168.1.100
+    #List of UUIDs of DanmEp objects referencing the reserved address
+    users:
+    - 9b62438c-3643-4ac7-b529-64074f975506
+    - ad37ebb5-dd23-4bda-be44-f741ce168241

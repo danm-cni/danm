@@ -18,7 +18,9 @@ rules:
   resources:
   - danmnets
   - clusternetworks
+  - clusternetworks/status
   - tenantnetworks
+  - tenantnetworks/status
   verbs:
   - get
   - list

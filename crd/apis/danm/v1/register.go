@@ -38,6 +38,8 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&TenantNetworkList{},
 		&TenantConfig{},
 		&TenantConfigList{},
+		&ReservedIP{},
+		&ReservedIPList{},
 	)
 	meta_v1.AddToGroupVersion(scheme, SchemeGroupVersion)
 	return nil

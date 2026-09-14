@@ -14,6 +14,8 @@ type Interface interface {
 	DanmEps() DanmEpInformer
 	// DanmNets returns a DanmNetInformer.
 	DanmNets() DanmNetInformer
+	// ReservedIPs returns a ReservedIPInformer.
+	ReservedIPs() ReservedIPInformer
 	// TenantConfigs returns a TenantConfigInformer.
 	TenantConfigs() TenantConfigInformer
 	// TenantNetworks returns a TenantNetworkInformer.
@@ -44,6 +46,11 @@ func (v *version) DanmEps() DanmEpInformer {
 // DanmNets returns a DanmNetInformer.
 func (v *version) DanmNets() DanmNetInformer {
 	return &danmNetInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+}
+
+// ReservedIPs returns a ReservedIPInformer.
+func (v *version) ReservedIPs() ReservedIPInformer {
+	return &reservedIPInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
 // TenantConfigs returns a TenantConfigInformer.

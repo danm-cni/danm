@@ -22,6 +22,14 @@ type DanmNetListerExpansion interface{}
 // DanmNetNamespaceLister.
 type DanmNetNamespaceListerExpansion interface{}
 
+// ReservedIPListerExpansion allows custom methods to be added to
+// ReservedIPLister.
+type ReservedIPListerExpansion interface{}
+
+// ReservedIPNamespaceListerExpansion allows custom methods to be added to
+// ReservedIPNamespaceLister.
+type ReservedIPNamespaceListerExpansion interface{}
+
 // TenantConfigListerExpansion allows custom methods to be added to
 // TenantConfigLister.
 type TenantConfigListerExpansion interface{}

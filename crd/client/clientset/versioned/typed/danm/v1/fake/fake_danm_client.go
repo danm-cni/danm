@@ -24,6 +24,10 @@ func (c *FakeDanmV1) DanmNets(namespace string) v1.DanmNetInterface {
 	return newFakeDanmNets(c, namespace)
 }
 
+func (c *FakeDanmV1) ReservedIPs(namespace string) v1.ReservedIPInterface {
+	return newFakeReservedIPs(c, namespace)
+}
+
 func (c *FakeDanmV1) TenantConfigs() v1.TenantConfigInterface {
 	return newFakeTenantConfigs(c)
 }
