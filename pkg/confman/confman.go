@@ -24,7 +24,7 @@ func GetTenantConfig(danmClient danmclientset.Interface) (*danmtypes.TenantConfi
 		return nil, err
 	}
 	if reply == nil || len(reply.Items) == 0 {
-		return nil, errors.New("no TenantConfigs exist int the cluster")
+		return nil, errors.New("no TenantConfig is configured in the cluster")
 	}
 	//TODO: do a namespace based selection later if one generic config does not suffice
 	return &reply.Items[0], nil

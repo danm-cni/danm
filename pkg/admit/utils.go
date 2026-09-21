@@ -38,7 +38,6 @@ func DecodeAdmissionReview(httpRequest *http.Request) (v1beta1.AdmissionReview, 
 }
 
 func SendErroneousAdmissionResponse(responseWriter http.ResponseWriter, request *v1beta1.AdmissionRequest, err error) {
-	log.Println("ERROR: Admitting resource failed with error:" + err.Error())
 	failedResponse := &v1beta1.AdmissionResponse{
 		Result: &metav1.Status{
 			Message: err.Error(),
@@ -47,6 +46,7 @@ func SendErroneousAdmissionResponse(responseWriter http.ResponseWriter, request 
 	}
 	if request != nil {
 		failedResponse.UID = request.UID
+		log.Println("ERROR: Admitting request:" + request.Name + " operation:" + string(request.Operation) + " failed with error:" + err.Error())
 	}
 	responseAdmissionReview := v1beta1.AdmissionReview{
 		Response: failedResponse,
