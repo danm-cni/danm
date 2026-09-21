@@ -81,9 +81,9 @@ var validateNetworkTcs = []struct {
 	{"AllocDuringCreateDNet", "", "alloc-without-cidr", DnetType, v1beta1.Create, nil, nil, true, nil, 0},
 	{"AllocDuringCreateTNet", "", "alloc-without-cidr", TnetType, v1beta1.Create, nil, nil, true, nil, 0},
 	{"AllocDuringCreateCNet", "", "alloc-without-cidr", CnetType, v1beta1.Create, nil, nil, true, nil, 0},
-	{"AllocationPoolWithoutCidrDNet", "", "alloc-without-cidr", DnetType, v1beta1.Update, nil, nil, true, nil, 0},
-	{"AllocationPoolWithoutCidrTNet", "", "alloc-without-cidr", TnetType, v1beta1.Update, nil, nil, true, nil, 0},
-	{"AllocationPoolWithoutCidrCNet", "", "alloc-without-cidr", CnetType, v1beta1.Update, nil, nil, true, nil, 0},
+	{"AllocationPoolWithoutCidrDNet", "alloc-without-cidr", "alloc-without-cidr", DnetType, v1beta1.Update, nil, nil, true, nil, 0},
+	{"AllocationPoolWithoutCidrTNet", "alloc-without-cidr", "alloc-without-cidr", TnetType, v1beta1.Update, nil, nil, true, nil, 0},
+	{"AllocationPoolWithoutCidrCNet", "alloc-without-cidr", "alloc-without-cidr", CnetType, v1beta1.Update, nil, nil, true, nil, 0},
 	{"AllocationPoolStartOutsideCidrDNet", "", "allocstart-outside-cidr", DnetType, "", nil, nil, true, nil, 0},
 	{"AllocationPoolStartOutsideCidrTNet", "", "allocstart-outside-cidr", TnetType, "", nil, nil, true, nil, 0},
 	{"AllocationPoolStartOutsideCidrCNet", "", "allocstart-outside-cidr", CnetType, "", nil, nil, true, nil, 0},
@@ -100,7 +100,7 @@ var validateNetworkTcs = []struct {
 	{"UpdateWithDeviceTNet", "", "tnet-device", TnetType, v1beta1.Update, nil, nil, true, nil, 0},
 	{"UpdateWithDevicePoolTNet", "", "tnet-dp", TnetType, v1beta1.Update, nil, nil, true, nil, 0},
 	{"NoNeTypeCreateSuccess", "", "no-netype", DnetType, v1beta1.Create, nil, nil, false, neTypeAndAlloc, 0},
-	{"NoNeTypeUpdateSuccess", "", "no-netype-update", CnetType, v1beta1.Update, nil, nil, false, onlyNeType, 0},
+	{"NoNeTypeUpdateSuccess", "no-netype-update", "no-netype-update", CnetType, v1beta1.Update, nil, nil, false, onlyNeType, 0},
 	{"L2NoPatchSuccess", "", "l2-with-allowedtenants", CnetType, v1beta1.Create, nil, nil, false, nil, 0},
 	{"NoTConfForTNet", "", "l2", TnetType, v1beta1.Create, nil, nil, true, nil, 0},
 	{"DeviceNotAllowedForTnet", "", "l2", TnetType, v1beta1.Create, oneDev, nil, true, nil, 0},
@@ -166,6 +166,7 @@ var validateNetworkTcs = []struct {
 	{"OkayToUnsetExplicitMtuCNet", "mtuNewLow", "mtuOldZero", CnetType, v1beta1.Update, nil, mtuCnet, false, nil, 0},
 	{"CreateStaticCnetWithVxlan", "", "cnet-vxlan", CnetType, v1beta1.Create, nil, nil, false, nil, 0},
 	{"CreateStaticTnetWithVxlan", "", "tnet-static-vxlan", TnetType, v1beta1.Create, twoDevs, nil, false, allocAndPoolAndVxlan, 1},
+	{"TNetFasttrackAllocUpdate", "alloc-without-cidr", "new-alloc-without-cidr", TnetType, v1beta1.Update, nil, nil, false, nil, 0},
 }
 
 var (
@@ -240,6 +241,10 @@ var (
 		{
 			ObjectMeta: meta_v1.ObjectMeta{Name: "alloc-without-cidr"},
 			Spec:       danmtypes.DanmNetSpec{NetworkType: "ipvlan", NetworkID: "nanomsg", Options: danmtypes.DanmNetOption{Alloc: "gAAAAAAAAAAAAAAE", Pool: danmtypes.IpPool{Start: "192.168.1.1"}}},
+		},
+		{
+			ObjectMeta: meta_v1.ObjectMeta{Name: "new-alloc-without-cidr"},
+			Spec:       danmtypes.DanmNetSpec{NetworkType: "ipvlan", NetworkID: "nanomsg", Options: danmtypes.DanmNetOption{Alloc: "gAAAAAAAAAAAAAAEEEE", Pool: danmtypes.IpPool{Start: "192.168.1.1"}}},
 		},
 		{
 			ObjectMeta: meta_v1.ObjectMeta{Name: "allocstart-outside-cidr"},

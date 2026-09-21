@@ -60,6 +60,11 @@ func (validator *Validator) ValidateNetwork(responseWriter http.ResponseWriter, 
 		SendErroneousAdmissionResponse(responseWriter, admissionReview.Request, err)
 		return
 	}
+	//Status and allocation changes are exempt and fast-tracked
+	if isItAnAutomatedUpdate(admissionReview.Request.Operation, admissionReview.Request.SubResource, oldManifest, newManifest) {
+		SendAdmissionResponse(responseWriter, v1beta1.AdmissionReview{Response: &v1beta1.AdmissionResponse{UID: admissionReview.Request.UID, Allowed: true}})
+		return
+	}
 	origNewManifest := *newManifest
 	isManifestValid, err := validateNetworkByType(oldManifest, newManifest, admissionReview.Request.Operation, validator.Client)
 	if !isManifestValid {
@@ -236,4 +241,10 @@ func createPatchListFromNetChanges(origNetwork danmtypes.DanmNet, changedNetwork
 		patchList = append(patchList, CreateGenericPatchFromChange(NetworkPatchPaths["Vxlan"], changedNetwork.Spec.Options.Vxlan))
 	}
 	return patchList
+}
+
+// TODO: consider changing this to UserInfo based validation to truly differentiate between tenant network administrator and DANM Controller requests
+func isItAnAutomatedUpdate(opType v1beta1.Operation, subResource string, oldManifest, newManifest *danmtypes.DanmNet) bool {
+	return opType == v1beta1.Update &&
+		(subResource != "" || oldManifest.Spec.Options.Alloc != newManifest.Spec.Options.Alloc || oldManifest.Spec.Options.Alloc6 != newManifest.Spec.Options.Alloc6)
 }
