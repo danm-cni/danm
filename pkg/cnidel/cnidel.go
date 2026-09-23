@@ -76,7 +76,7 @@ func IsDanmIpamNeededForDelegation(iface datastructs.Interface, netInfo *danmtyp
 	if iface.Ip == ipam.NoneAllocType ||
 		iface.Ip6 == ipam.NoneAllocType ||
 		(iface.Ip != "" && iface.Ip != ipam.NoneAllocType && netInfo.Spec.Options.Cidr != "") ||
-		(iface.Ip6 != "" && iface.Ip6 != ipam.NoneAllocType && netInfo.Spec.Options.Pool6.Cidr != "") {
+		(iface.Ip6 != "" && iface.Ip6 != ipam.NoneAllocType && netInfo.Spec.Options.Net6 != "") {
 		return true
 	}
 	return false
@@ -174,10 +174,10 @@ func setEpIfaceAddress(cniResult *current.Result, epIface *danmtypes.DanmEpIface
 // Returns an error if interface creation was unsuccessful, or if the 3rd party CNI config could not be loaded
 func DelegateInterfaceDelete(netConf *datastructs.NetConf, netInfo *danmtypes.DanmNet, ep *danmtypes.DanmEp) error {
 	var ip4, ip6 string
-	if ipam.WasIpAllocatedByDanm(ep.Spec.Iface.Address, netInfo.Spec.Options.Cidr) {
+	if ipam.WasIpAllocatedByDanm(ep.Spec.Iface.Address, netInfo) {
 		ip4 = ep.Spec.Iface.Address
 	}
-	if ipam.WasIpAllocatedByDanm(ep.Spec.Iface.AddressIPv6, netInfo.Spec.Options.Net6) {
+	if ipam.WasIpAllocatedByDanm(ep.Spec.Iface.AddressIPv6, netInfo) {
 		ip6 = ep.Spec.Iface.AddressIPv6
 	}
 	ipamForDelete := getCniIpamConfig(netInfo, ip4, ip6)

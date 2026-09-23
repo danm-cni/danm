@@ -130,10 +130,14 @@ func allocateAddress(pool *danmtypes.IpPool, alloc, reqType, allocCidr, netCidr 
 		begin, end := getAllocRangeBasedOnCidr(pool, allocSubnet)
 		var lastIpIndex uint32
 		if pool.LastIp != "" {
-			lastIp := net.ParseIP(pool.LastIp)
-			lastIpIndex = GetIndexOfIp(lastIp, allocSubnet)
+			//Support both CIDR and plain IP format just in-case
+			lastIp, _, _ := net.ParseCIDR(pool.LastIp)
+			if lastIp == nil {
+				lastIp = net.ParseIP(pool.LastIp)
+			}
+			lastIpIndex = GetIndexOfIp(lastIp, allocSubnet) + 1
 		}
-		if lastIpIndex >= end || lastIpIndex == 0 {
+		if lastIpIndex > end || lastIpIndex < begin {
 			lastIpIndex = begin
 		}
 		var doesAnyFreeIpExist bool
@@ -147,7 +151,7 @@ func allocateAddress(pool *danmtypes.IpPool, alloc, reqType, allocCidr, netCidr 
 			}
 			//Now let's look from the beginning until LastIp
 			if i == end && end != lastIpIndex {
-				i = begin
+				i = begin - 1
 				end = lastIpIndex
 			}
 		}
@@ -377,13 +381,29 @@ func GetBroadcastAddress(subnet *net.IPNet) net.IP {
 	return lastIp
 }
 
-func WasIpAllocatedByDanm(ip, cidr string) bool {
-	_, subnet, _ := net.ParseCIDR(cidr)
+func WasIpAllocatedByDanm(ip string, netInfo *danmtypes.DanmNet) bool {
+	if netInfo == nil {
+		return false
+	}
+	//Interface without IP is a DANM special so DanmEps having such attributes need to be treated as "DANM-managed" to ensure they are properly cleaned
+	//ipam.Free is already prepared to handle these types
+	if ip == NoneAllocType || ip == "" {
+		return true
+	}
+
 	parsedIp := net.ParseIP(ip)
 	if parsedIp == nil {
 		parsedIp, _, _ = net.ParseCIDR(ip)
 	}
-	if parsedIp != nil && (subnet != nil && subnet.Contains(parsedIp)) {
+	//Static IP allocations can fall outside of the allocation pool but must be inside the network's CIDR so such an IP is still "DANM allocated" even though no bit is reserved for it in Alloc/Alloc6
+	//ipam.resetIP can handle them gracefully
+	var netCidr *net.IPNet
+	if parsedIp.To4() != nil {
+		_, netCidr, _ = net.ParseCIDR(netInfo.Spec.Options.Cidr)
+	} else {
+		_, netCidr, _ = net.ParseCIDR(netInfo.Spec.Options.Net6)
+	}
+	if parsedIp != nil && netCidr != nil && netCidr.Contains(parsedIp) {
 		return true
 	}
 	return false
