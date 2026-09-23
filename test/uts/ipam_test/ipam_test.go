@@ -31,6 +31,14 @@ var testNets = []danmtypes.DanmNet{
 	{ObjectMeta: meta_v1.ObjectMeta{Name: "nogws"}, Spec: danmtypes.DanmNetSpec{NetworkID: "nogws", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26", Net6: "2a00:8a00:a000:1193::/64"}}},
 	{ObjectMeta: meta_v1.ObjectMeta{Name: "gws"}, Spec: danmtypes.DanmNetSpec{NetworkID: "gws", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26", Net6: "2a00:8a00:a000:1193::/64", Routes: map[string]string{"10.20.20.0/24": "192.168.1.65"}, Routes6: map[string]string{"2a00:8a00:a000:1194:/64": "2a00:8a00:a000:1193::1"}}}},
 	{ObjectMeta: meta_v1.ObjectMeta{Name: "fullinitv6Gws"}, Spec: danmtypes.DanmNetSpec{NetworkID: "gwsReserved", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26", Net6: "2a00:8a00:a000:1193::/64", Routes: map[string]string{"10.20.20.0/24": "192.168.1.65"}, Routes6: map[string]string{"2a00:8a00:a000:1194:/64": "2a00:8a00:a000:1193::1"}}}},
+	{ObjectMeta: meta_v1.ObjectMeta{Name: "lastIpCidr"}, Spec: danmtypes.DanmNetSpec{NetworkID: "lastIpCidr", Options: danmtypes.DanmNetOption{Cidr: "192.168.1.64/26", Pool: danmtypes.IpPool{Start: "192.168.1.70", End: "192.168.1.80", LastIp: "192.168.1.79/26"}}}},
+	{
+		ObjectMeta: meta_v1.ObjectMeta{Name: "superDualStack"},
+		Spec: danmtypes.DanmNetSpec{NetworkType: "ipvlan", NetworkID: "superDualStack",
+			Options: danmtypes.DanmNetOption{
+				Cidr: "192.168.1.64/26", Pool: danmtypes.IpPool{Start: "192.168.1.70", End: "192.168.1.80", LastIp: "192.168.1.72/26"},
+				Net6: "2001:db8:85a3::8a2e:370:7334/108", Pool6: danmtypes.IpPoolV6{Cidr: "2001:db8:85a3::8a2e:370:7334/109", IpPool: danmtypes.IpPool{Start: "2001:db8:85a3::8a2e:370:7340", End: "2001:db8:85a3::8a2e:370:7350"}}}},
+	},
 }
 
 var reserveTcs = []struct {
@@ -82,6 +90,7 @@ var reserveTcs = []struct {
 	{"staticV6GwSuccess", 16, "", "2a00:8a00:a000:1193::1", "", "2a00:8a00:a000:1193::1/64", false, 1},
 	{"staticV4GwFailIpReserved", 17, "192.168.1.65/26", "", "", "", true, 0},
 	{"staticV6GwFailIpReserved", 17, "", "2a00:8a00:a000:1193::1", "", "", true, 0},
+	{"dyanmicV4FromAllocationPoolWithLastIpCidr", 18, "dynamic", "", "192.168.1.80/26", "", false, 1},
 }
 
 var freeTcs = []struct {
@@ -113,6 +122,30 @@ var gcTcs = []struct {
 	{"ip4OnlyGc", 12, "192.168.1.110/26", ""},
 	{"ip6OnlyGc", 12, "", "2a00:8a00:a000:1193::1/106"},
 	{"dualStackGc", 12, "192.168.1.115", "2a00:8a00:a000:1193::5"},
+	{"emptyV4FilledV6", 12, "", "2a00:8a00:a000:1193::5"},
+	{"noneV4FilledV6", 12, "none", "2a00:8a00:a000:1193::5"},
+	{"filledV4EmptyV6", 12, "192.168.1.115", ""},
+	{"filledV4NoneV6", 12, "192.168.1.115", "none"},
+}
+
+var wasAllocatedTcs = []struct {
+	tcName            string
+	netName           string
+	allocatedIp       string
+	expectedAllocated bool
+}{
+	{"empty", "superDualStack", "", true},
+	{"none", "superDualStack", "none", true},
+	{"v4IpForm", "superDualStack", "192.168.1.71", true},
+	{"v4CidrForm", "superDualStack", "192.168.1.71/26", true},
+	{"v6IpForm", "superDualStack", "2001:db8:85a3::8a2e:370:7341", true},
+	{"v6CidrForm", "superDualStack", "2001:db8:85a3::8a2e:370:7341/109", true},
+	{"v4OutsideDynamicRange", "superDualStack", "192.168.1.81", true},
+	{"v6OutsideDynamicRange", "superDualStack", "2001:db8:85a3::8a2e:370:8000", true},
+	{"v4OutsideNetworkCidr", "superDualStack", "192.168.1.63", false},
+	{"v6OutsideNetworkCidr", "superDualStack", "2001:db8:85a3::8a2e:369:0", false},
+	{"v4L2", "l2", "192.168.1.81", false},
+	{"v6l2", "l2", "2001:db8:85a3::8a2e:370:8000", false},
 }
 
 func TestReserve(t *testing.T) {
@@ -188,7 +221,28 @@ func TestGarbageCollectIps(t *testing.T) {
 			ips = utils.AppendIpToExpectedAllocsList(ips, tc.allocatedIp6, false, testNets[tc.netIndex].Spec.NetworkID)
 			testArtifacts := utils.TestArtifacts{TestNets: testNets, ReservedIps: ips}
 			netClientStub := stubs.NewClientSetStub(testArtifacts)
-			ipam.GarbageCollectIps(netClientStub, &testNets[tc.netIndex], tc.allocatedIp4, tc.allocatedIp6)
+			err := ipam.GarbageCollectIps(netClientStub, &testNets[tc.netIndex], tc.allocatedIp4, tc.allocatedIp6)
+			if err != nil {
+				t.Errorf("Received error:%v does not match with expectation", err)
+			}
+		})
+	}
+}
+
+func TestWasIpAllocatedByDanm(t *testing.T) {
+	for _, tc := range wasAllocatedTcs {
+		t.Run(tc.tcName, func(t *testing.T) {
+			var testNet danmtypes.DanmNet
+			for _, net := range testNets {
+				if net.Name == tc.netName {
+					testNet = net
+					break
+				}
+			}
+			wasAllocated := ipam.WasIpAllocatedByDanm(tc.allocatedIp, &testNet)
+			if wasAllocated != tc.expectedAllocated {
+				t.Errorf("Received allocation verdict:%v does not match with expectation:%v", wasAllocated, tc.expectedAllocated)
+			}
 		})
 	}
 }

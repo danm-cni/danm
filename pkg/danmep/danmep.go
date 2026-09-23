@@ -371,13 +371,12 @@ func UpdateDanmEp(client danmclientset.Interface, ep *danmtypes.DanmEp) error {
 // DeleteDanmEp is a RAII-like API to automatically free IP allocations whenever the resource holding these allocations is deleted
 // It helps making sure IPs are always and only freed when a DanmEp is indeed deleted
 func DeleteDanmEp(danmClient danmclientset.Interface, ep *danmtypes.DanmEp, dnet *danmtypes.DanmNet) error {
-	var err error
-	if (ep.Spec.Iface.Address != "" || ep.Spec.Iface.AddressIPv6 != "") && dnet == nil {
-		return errors.New("DanmEp:" + ep.ObjectMeta.Name + " cannot be safely deleted because its linked network is not available to free DANM IPAM allocated IPs")
-	}
-	//We only need to Free an IP if it was allocated by DANM IPAM, and it was allocated by DANM only if it falls into any of the defined subnets
-	if ipam.WasIpAllocatedByDanm(ep.Spec.Iface.Address, dnet.Spec.Options.Cidr) || ipam.WasIpAllocatedByDanm(ep.Spec.Iface.AddressIPv6, dnet.Spec.Options.Pool6.Cidr) {
-		err = ipam.GarbageCollectIps(danmClient, dnet, ep.Spec.Iface.Address, ep.Spec.Iface.AddressIPv6)
+	if (ep.Spec.Iface.Address != "" && ep.Spec.Iface.Address != ipam.NoneAllocType) ||
+		(ep.Spec.Iface.AddressIPv6 != "" && ep.Spec.Iface.AddressIPv6 != ipam.NoneAllocType) {
+		if dnet == nil {
+			return errors.New("DanmEp:" + ep.ObjectMeta.Name + " cannot be safely deleted because its linked network is not available to free DANM IPAM allocated IPs")
+		}
+		err := ipam.GarbageCollectIps(danmClient, dnet, ep.Spec.Iface.Address, ep.Spec.Iface.AddressIPv6)
 		if err != nil {
 			return errors.New("DanmEp:" + ep.ObjectMeta.Name + " cannot be safely deleted because freeing its reserved IP addresses failed with error:" + err.Error())
 		}
