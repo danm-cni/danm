@@ -9,6 +9,8 @@ import (
 type ClientStub struct {
 	Objects     utils.TestArtifacts
 	NetClient   *NetClientStub
+	TnetClient  *TnetClientStub
+	CnetClient  *CnetClientStub
 	TconfClient *TconfClientStub
 }
 
@@ -31,11 +33,17 @@ func (client *ClientStub) TenantConfigs() client.TenantConfigInterface {
 }
 
 func (client *ClientStub) TenantNetworks(namespace string) client.TenantNetworkInterface {
-	return nil
+	if client.TnetClient == nil {
+		client.TnetClient = newTnetClientStub(client.Objects.TestTnets)
+	}
+	return client.TnetClient
 }
 
 func (client *ClientStub) ClusterNetworks() client.ClusterNetworkInterface {
-	return nil
+	if client.CnetClient == nil {
+		client.CnetClient = newCnetClientStub(client.Objects.TestCnets)
+	}
+	return client.CnetClient
 }
 
 func (client *ClientStub) ReservedIPs(namespace string) client.ReservedIPInterface {

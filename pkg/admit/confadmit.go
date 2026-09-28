@@ -6,10 +6,12 @@ import (
 	"errors"
 	"net/http"
 	"reflect"
+	"strconv"
 
 	danmtypes "github.com/danm-cni/danm/crd/apis/danm/v1"
 	"github.com/danm-cni/danm/pkg/bitarray"
-	"k8s.io/api/admission/v1beta1"
+	admv1beta1 "k8s.io/api/admission/v1beta1"
+	"k8s.io/utils/cpuset"
 )
 
 const (
@@ -50,7 +52,7 @@ func (validator *Validator) ValidateTenantConfig(responseWriter http.ResponseWri
 		return
 	}
 	mutateConfigManifest(newManifest)
-	responseAdmissionReview := v1beta1.AdmissionReview{
+	responseAdmissionReview := admv1beta1.AdmissionReview{
 		Response: CreateReviewResponseFromPatches(createPatchListFromConfigChanges(origNewManifest, newManifest)),
 	}
 	responseAdmissionReview.Response.UID = admissionReview.Request.UID
@@ -76,7 +78,7 @@ func decodeTenantConfig(objectToReview []byte) (*danmtypes.TenantConfig, error) 
 
 // TODO: as above. Until reflection is figured out, this is somewhat of a duplication
 // Maybe a struct wrapping the exact object type could also work (that would push reflection responsibility on the validators though)
-func validateConfig(oldManifest, newManifest *danmtypes.TenantConfig, opType v1beta1.Operation) (bool, error) {
+func validateConfig(oldManifest, newManifest *danmtypes.TenantConfig, opType admv1beta1.Operation) (bool, error) {
 	if newManifest.TypeMeta.Kind != "TenantConfig" {
 		return false, errors.New("K8s API type:" + newManifest.TypeMeta.Kind + " is not handled by DANM webhook")
 	}
@@ -85,6 +87,55 @@ func validateConfig(oldManifest, newManifest *danmtypes.TenantConfig, opType v1b
 		return false, err
 	}
 	return true, nil
+}
+
+func validateTenantconfig(oldManifest, newManifest *danmtypes.TenantConfig, opType admv1beta1.Operation) error {
+	if len(newManifest.HostDevices) == 0 && len(newManifest.NetworkIds) == 0 {
+		return errors.New("Either hostDevices, or networkIds must be provided!")
+	}
+	var err error
+	for _, ifaceConf := range newManifest.HostDevices {
+		err = validateIfaceConfig(ifaceConf, opType)
+		if err != nil {
+			return err
+		}
+	}
+	for nType, nId := range newManifest.NetworkIds {
+		if nType == "" || nId == "" {
+			return errors.New("neither NetworkID, nor NetworkType can be empty in a NetworkID mapping!")
+		}
+		if len(nId) > MaxNidLength && len(newManifest.HostDevices) > 0 {
+			return errors.New("NetworkID:" + nId + " cannot be longer than " + strconv.Itoa(MaxNidLength) + " characters when HostDevices is present (otherwise VLAN and VxLAN host interface creation might fail due to kernel iface name length restriction)!")
+		}
+	}
+	return nil
+}
+
+func validateIfaceConfig(ifaceConf danmtypes.IfaceProfile, opType admv1beta1.Operation) error {
+	if ifaceConf.Name == "" {
+		return errors.New("name attribute of a hostDevice must not be empty!")
+	}
+	if (ifaceConf.VniType == "" && ifaceConf.VniRange != "") ||
+		(ifaceConf.VniRange == "" && ifaceConf.VniType != "") {
+		return errors.New("vniRange and vniType attributes must be provided together for interface:" + ifaceConf.Name)
+	}
+	if ifaceConf.VniType != "" && ifaceConf.VniType != VniTypeVlan && ifaceConf.VniType != VniTypeVxlan {
+		return errors.New(ifaceConf.VniType + " is not in allowed vniType values: {vlan,vxlan} for interface:" + ifaceConf.Name)
+	}
+	if opType == admv1beta1.Create && ifaceConf.Alloc != "" {
+		return errors.New("Allocation bitmask for interface: " + ifaceConf.Name + " shall not be manually defined upon creation!")
+	}
+	//I know this type is for CPU sets, but isn't it just perfect for handling arbitrarily defined integer ranges?
+	vniSet, err := cpuset.Parse(ifaceConf.VniRange)
+	if err != nil {
+		return errors.New("vniRange for interface:" + ifaceConf.Name + " must be improperly formatted because its parsing fails with:" + err.Error())
+	}
+	maxAllowedVni := getMaxAllowedVni(ifaceConf.VniType)
+	filteredSet := filterVnis(vniSet, maxAllowedVni)
+	if filteredSet.Size() > 0 {
+		return errors.New("vniRange for interface:" + ifaceConf.Name + " is invalid, because it cannot contain VNIs over the maximum supported number for its VNI Type that is:" + strconv.Itoa(maxAllowedVni))
+	}
+	return nil
 }
 
 func createPatchListFromConfigChanges(origConfig danmtypes.TenantConfig, changedConfig *danmtypes.TenantConfig) []Patch {

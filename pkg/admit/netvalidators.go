@@ -207,55 +207,6 @@ func validateTenantNetRules(oldManifest, newManifest *danmtypes.DanmNet, opType 
 	return nil
 }
 
-func validateTenantconfig(oldManifest, newManifest *danmtypes.TenantConfig, opType admv1beta1.Operation) error {
-	if len(newManifest.HostDevices) == 0 && len(newManifest.NetworkIds) == 0 {
-		return errors.New("Either hostDevices, or networkIds must be provided!")
-	}
-	var err error
-	for _, ifaceConf := range newManifest.HostDevices {
-		err = validateIfaceConfig(ifaceConf, opType)
-		if err != nil {
-			return err
-		}
-	}
-	for nType, nId := range newManifest.NetworkIds {
-		if nType == "" || nId == "" {
-			return errors.New("neither NetworkID, nor NetworkType can be empty in a NetworkID mapping!")
-		}
-		if len(nId) > MaxNidLength && len(newManifest.HostDevices) > 0 {
-			return errors.New("NetworkID:" + nId + " cannot be longer than " + strconv.Itoa(MaxNidLength) + " characters when HostDevices is present (otherwise VLAN and VxLAN host interface creation might fail due to kernel iface name length restriction)!")
-		}
-	}
-	return nil
-}
-
-func validateIfaceConfig(ifaceConf danmtypes.IfaceProfile, opType admv1beta1.Operation) error {
-	if ifaceConf.Name == "" {
-		return errors.New("name attribute of a hostDevice must not be empty!")
-	}
-	if (ifaceConf.VniType == "" && ifaceConf.VniRange != "") ||
-		(ifaceConf.VniRange == "" && ifaceConf.VniType != "") {
-		return errors.New("vniRange and vniType attributes must be provided together for interface:" + ifaceConf.Name)
-	}
-	if ifaceConf.VniType != "" && ifaceConf.VniType != VniTypeVlan && ifaceConf.VniType != VniTypeVxlan {
-		return errors.New(ifaceConf.VniType + " is not in allowed vniType values: {vlan,vxlan} for interface:" + ifaceConf.Name)
-	}
-	if opType == admv1beta1.Create && ifaceConf.Alloc != "" {
-		return errors.New("Allocation bitmask for interface: " + ifaceConf.Name + " shall not be manually defined upon creation!")
-	}
-	//I know this type is for CPU sets, but isn't it just perfect for handling arbitrarily defined integer ranges?
-	vniSet, err := cpuset.Parse(ifaceConf.VniRange)
-	if err != nil {
-		return errors.New("vniRange for interface:" + ifaceConf.Name + " must be improperly formatted because its parsing fails with:" + err.Error())
-	}
-	maxAllowedVni := getMaxAllowedVni(ifaceConf.VniType)
-	filteredSet := filterVnis(vniSet, maxAllowedVni)
-	if filteredSet.Size() > 0 {
-		return errors.New("vniRange for interface:" + ifaceConf.Name + " is invalid, because it cannot contain VNIs over the maximum supported number for its VNI Type that is:" + strconv.Itoa(maxAllowedVni))
-	}
-	return nil
-}
-
 func validateNeType(oldManifest, newManifest *danmtypes.DanmNet, opType admv1beta1.Operation, client danmclientset.Interface) error {
 	if newManifest.Spec.NetworkType == "sriov" {
 		if newManifest.Spec.Options.DevicePool == "" || newManifest.Spec.Options.Device != "" {

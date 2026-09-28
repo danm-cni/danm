@@ -15,7 +15,8 @@ import (
 )
 
 const (
-	TenantConfigKind = "TenantConfig"
+	TenantConfigKind    = "TenantConfig"
+	ReservedIpPrivilege = "reservedIp"
 )
 
 func GetTenantConfig(danmClient danmclientset.Interface) (*danmtypes.TenantConfig, error) {
@@ -153,4 +154,23 @@ func updateTenantConf(danmClient danmclientset.Interface, tconf *danmtypes.Tenan
 		wasRefreshed = true
 	}
 	return newConf, wasRefreshed, err
+}
+
+func CheckCnetPrivilege(client danmclientset.Interface, cnet, privilege string) (bool, error) {
+	tconf, err := GetTenantConfig(client)
+	if err != nil {
+		return false, err
+	}
+	isCnetAllowed := false
+	for _, allowedCnet := range tconf.AllowedCNets {
+		if cnet == allowedCnet.Name {
+			for _, privilege := range allowedCnet.Privileges {
+				if privilege == ReservedIpPrivilege {
+					isCnetAllowed = true
+					break
+				}
+			}
+		}
+	}
+	return isCnetAllowed, nil
 }
