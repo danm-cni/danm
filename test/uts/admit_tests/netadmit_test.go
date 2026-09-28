@@ -621,7 +621,7 @@ func TestValidateNetwork(t *testing.T) {
 			writerStub := httpstub.NewWriterStub()
 			oldNet, _, shouldOldMalform := getNetForValidate(tc.oldNetName, valNets, tc.neType)
 			newNet, _, shouldNewMalform := getNetForValidate(tc.newNetName, valNets, tc.neType)
-			request, err := utils.CreateHttpRequest(oldNet, newNet, shouldOldMalform, shouldNewMalform, tc.opType)
+			request, err := utils.CreateHttpRequest(oldNet, newNet, shouldOldMalform, shouldNewMalform, tc.opType, false)
 			if err != nil {
 				t.Errorf("Could not create test HTTP Request object, because:%v", err)
 				return

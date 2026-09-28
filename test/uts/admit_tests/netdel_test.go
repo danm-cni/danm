@@ -149,7 +149,7 @@ func TestDeleteNetwork(t *testing.T) {
 			defer resetTconf(tc.tconf)
 			writerStub := httpstub.NewWriterStub()
 			oldNet, dnet, shouldOldMalform := getTestNet(tc.oldNetName, delNets)
-			request, err := utils.CreateHttpRequest(oldNet, nil, shouldOldMalform, false, "")
+			request, err := utils.CreateHttpRequest(oldNet, nil, shouldOldMalform, false, "", false)
 			if err != nil {
 				t.Errorf("Could not create test HTTP Request object, because:%v", err)
 				return

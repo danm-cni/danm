@@ -44,6 +44,7 @@ func main() {
 	http.HandleFunc("/netvalidation", validator.ValidateNetwork)
 	http.HandleFunc("/confvalidation", validator.ValidateTenantConfig)
 	http.HandleFunc("/netdeletion", validator.DeleteNetwork)
+	http.HandleFunc("/reservedip", validator.ValidateReservedIp)
 	server := &http.Server{
 		Addr:         *address + ":" + strconv.Itoa(*port),
 		TLSConfig:    &tls.Config{Certificates: []tls.Certificate{tlsConf}},

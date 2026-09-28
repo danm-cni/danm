@@ -208,7 +208,7 @@ func TestValidateTenantConfig(t *testing.T) {
 			writerStub := httpstub.NewWriterStub()
 			oldTconf, shouldOldMalform := getTestConf(tc.oldTconfName, validateConfs)
 			newTconf, shouldNewMalform := getTestConf(tc.newTconfName, validateConfs)
-			request, err := utils.CreateHttpRequest(oldTconf, newTconf, shouldOldMalform, shouldNewMalform, tc.opType)
+			request, err := utils.CreateHttpRequest(oldTconf, newTconf, shouldOldMalform, shouldNewMalform, tc.opType, false)
 			if err != nil {
 				t.Errorf("Could not create test HTTP Request object, because:%v", err)
 				return

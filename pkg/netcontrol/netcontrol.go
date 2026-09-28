@@ -475,6 +475,7 @@ func ConvertTnetToDnet(tnet *danmtypes.TenantNetwork) *danmtypes.DanmNet {
 		TypeMeta:   tnet.TypeMeta,
 		ObjectMeta: tnet.ObjectMeta,
 		Spec:       tnet.Spec,
+		Status:     tnet.Status,
 	}
 	//Why do I need to set this, you could ask?
 	//Well, don't: https://github.com/kubernetes/client-go/issues/308
@@ -487,6 +488,7 @@ func ConvertCnetToDnet(cnet *danmtypes.ClusterNetwork) *danmtypes.DanmNet {
 		TypeMeta:   cnet.TypeMeta,
 		ObjectMeta: cnet.ObjectMeta,
 		Spec:       cnet.Spec,
+		Status:     cnet.Status,
 	}
 	dnet.TypeMeta.Kind = ClusterNetworkKind
 	return &dnet
@@ -529,6 +531,7 @@ func ConvertDnetToTnet(dnet *danmtypes.DanmNet) *danmtypes.TenantNetwork {
 		TypeMeta:   dnet.TypeMeta,
 		ObjectMeta: dnet.ObjectMeta,
 		Spec:       dnet.Spec,
+		Status:     dnet.Status,
 	}
 }
 
@@ -537,6 +540,7 @@ func ConvertDnetToCnet(dnet *danmtypes.DanmNet) *danmtypes.ClusterNetwork {
 		TypeMeta:   dnet.TypeMeta,
 		ObjectMeta: dnet.ObjectMeta,
 		Spec:       dnet.Spec,
+		Status:     dnet.Status,
 	}
 }
 
@@ -552,6 +556,32 @@ func PutNetwork(danmClient danmclientset.Interface, dnet *danmtypes.DanmNet) (bo
 	case ClusterNetworkKind:
 		cn := ConvertDnetToCnet(dnet)
 		_, err = danmClient.DanmV1().ClusterNetworks().Update(context.TODO(), cn, meta_v1.UpdateOptions{})
+	default:
+		return wasResourceAlreadyUpdated, errors.New("can't refresh network object because it has an invalid type:" + dnet.TypeMeta.Kind)
+	}
+	if err != nil {
+		if strings.Contains(err.Error(), datastructs.OptimisticLockErrorMsg) {
+			wasResourceAlreadyUpdated = true
+			return wasResourceAlreadyUpdated, nil
+		}
+		return wasResourceAlreadyUpdated, err
+	}
+	return wasResourceAlreadyUpdated, nil
+}
+
+func UpdateNetStatus(danmClient danmclientset.Interface, dnet *danmtypes.DanmNet) (bool, error) {
+	var err error
+	var wasResourceAlreadyUpdated bool
+	switch dnet.TypeMeta.Kind {
+	//Status field only exists in the production APIs
+	case DanmNetKind, "":
+		return wasResourceAlreadyUpdated, nil
+	case TenantNetworkKind:
+		tn := ConvertDnetToTnet(dnet)
+		_, err = danmClient.DanmV1().TenantNetworks(dnet.ObjectMeta.Namespace).UpdateStatus(context.TODO(), tn, meta_v1.UpdateOptions{})
+	case ClusterNetworkKind:
+		cn := ConvertDnetToCnet(dnet)
+		_, err = danmClient.DanmV1().ClusterNetworks().UpdateStatus(context.TODO(), cn, meta_v1.UpdateOptions{})
 	default:
 		return wasResourceAlreadyUpdated, errors.New("can't refresh network object because it has an invalid type:" + dnet.TypeMeta.Kind)
 	}
@@ -625,6 +655,20 @@ func GetNetworkFromEp(danmClient danmclientset.Interface, ep *danmtypes.DanmEp) 
 		dummyIface.ClusterNetwork = ep.Spec.NetworkName
 	}
 	return GetNetworkFromInterface(danmClient, dummyIface, ep.ObjectMeta.Namespace)
+}
+
+func GetNetworkFromReference(danmClient danmclientset.Interface, name, namespace, kind string) (*danmtypes.DanmNet, error) {
+	dummyIface := datastructs.Interface{}
+	if kind == DanmNetKind {
+		dummyIface.Network = name
+	}
+	if kind == TenantNetworkKind {
+		dummyIface.TenantNetwork = name
+	}
+	if kind == ClusterNetworkKind {
+		dummyIface.ClusterNetwork = name
+	}
+	return GetNetworkFromInterface(danmClient, dummyIface, namespace)
 }
 
 func RefreshNetwork(danmClient danmclientset.Interface, netInfo danmtypes.DanmNet) (*danmtypes.DanmNet, error) {

@@ -25,6 +25,8 @@ var (
 
 type TestArtifacts struct {
 	TestNets      []danmtypes.DanmNet
+	TestTnets     []danmtypes.TenantNetwork
+	TestCnets     []danmtypes.ClusterNetwork
 	TestEps       []danmtypes.DanmEp
 	ReservedIps   []ReservedIpsList
 	TestTconfs    []danmtypes.TenantConfig
@@ -132,7 +134,7 @@ func GetTconf(tconfName string, tconfSet []danmtypes.TenantConfig) *danmtypes.Te
 	return nil
 }
 
-func CreateHttpRequest(oldObj, newObj []byte, isOldMalformed, isNewMalformed bool, opType v1beta1.Operation) (*http.Request, error) {
+func CreateHttpRequest(oldObj, newObj []byte, isOldMalformed, isNewMalformed bool, opType v1beta1.Operation, isDry bool) (*http.Request, error) {
 	request := v1beta1.AdmissionRequest{}
 	review := v1beta1.AdmissionReview{Request: &request}
 	if opType != "" {
@@ -144,6 +146,10 @@ func CreateHttpRequest(oldObj, newObj []byte, isOldMalformed, isNewMalformed boo
 	}
 	if newObj != nil {
 		review.Request.Object.Raw = canItMalform(newObj, isNewMalformed)
+	}
+	if isDry {
+		trueBool := true
+		review.Request.DryRun = &trueBool
 	}
 	httpRequest := http.Request{}
 	if oldObj != nil || newObj != nil {
