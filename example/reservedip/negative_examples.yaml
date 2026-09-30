@@ -1,0 +1,148 @@
+---
+apiVersion: danm.io/v1
+kind: ReservedIP
+metadata:
+  name: network-doesnt-exist
+  namespace: default
+spec:
+  network:
+    name: examplel4
+    type: ClusterNetwork
+  ips:
+  - address: 10.100.1.50
+  - address: 2a00:8a00:a000:1193::1
+    shareable: true
+---
+apiVersion: danm.io/v1
+kind: ReservedIP
+metadata:
+  name: network-doesnt-exist-type-mismatch
+  namespace: default
+spec:
+  network:
+    name: examplel3
+    type: TenantNetwork
+  ips:
+  - address: 10.240.1.50
+  - address: 2a00:8a00:a000:1193::1
+    shareable: true
+---
+apiVersion: danm.io/v1
+kind: ReservedIP
+metadata:
+  name: network-type-undefined
+  namespace: default
+spec:
+  network:
+    name: examplel3
+    type: ClusterNet
+  ips:
+  - address: 10.100.1.50
+  - address: 2a00:8a00:a000:1193::1
+    shareable: true
+---
+apiVersion: danm.io/v1
+kind: ReservedIP
+metadata:
+  name: tnet-wrong-namespace
+  namespace: kube-system
+spec:
+  network:
+    name: internal
+    type: TenantNetwork
+  ips:
+  - address: 10.240.1.50
+  - address: 2a00:8a00:a000:1193::1
+    shareable: true
+---
+apiVersion: danm.io/v1
+kind: ReservedIP
+metadata:
+  name: doublev4
+  namespace: default
+spec:
+  network:
+    name: internal
+    type: TenantNetwork
+  ips:
+  - address: 10.240.1.50
+  - address: 10.240.1.51
+    shareable: true
+---
+apiVersion: danm.io/v1
+kind: ReservedIP
+metadata:
+  name: doublev6
+  namespace: default
+spec:
+  network:
+    name: internal
+    type: TenantNetwork
+  ips:
+  - address: 3a00:8a00:a000:1193::1
+  - address: 3a00:8a00:a000:1193::2
+    shareable: true
+---
+apiVersion: danm.io/v1
+kind: ReservedIP
+metadata:
+  name: v4-outside
+  namespace: default
+spec:
+  network:
+    name: internal
+    type: TenantNetwork
+  ips:
+  - address: 10.100.0.50
+---
+apiVersion: danm.io/v1
+kind: ReservedIP
+metadata:
+  name: v6-outside
+  namespace: default
+spec:
+  network:
+    name: internal
+    type: TenantNetwork
+  ips:
+  - address: 2a00:8a00:a000:1193::1
+    shareable: true
+---
+apiVersion: danm.io/v1
+kind: ReservedIP
+metadata:
+  name: v4-invalid
+  namespace: default
+spec:
+  network:
+    name: internal
+    type: TenantNetwork
+  ips:
+  - address: 10.100.0.5a
+---
+apiVersion: danm.io/v1
+kind: ReservedIP
+metadata:
+  name: v6-invalid
+  namespace: default
+spec:
+  network:
+    name: internal
+    type: TenantNetwork
+  ips:
+  - address: 2a00:8a00:a000:1193::11111
+    shareable: true
+---
+apiVersion: danm.io/v1
+kind: ReservedIP
+metadata:
+  name: cnet
+  namespace: default
+spec:
+  network:
+    name: non-reservable-l3
+    type: ClusterNetwork
+  ips:
+  - address: 10.100.1.50
+  - address: 2a00:8a00:a000:1193::1
+    shareable: true

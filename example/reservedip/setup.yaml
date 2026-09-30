@@ -1,0 +1,72 @@
+---
+apiVersion: danm.io/v1
+kind: TenantConfig
+metadata:
+  name: ripprivilege
+hostDevices:
+- name: ens4
+  vniType: vlan
+  vniRange: 1000-2000
+- name: ens5
+  vniType: vlan
+  vniRange: 2000-3000
+networkIds:
+  flannel: flannel
+allowedClusterNetworks:
+- name: examplel3
+  privileges:
+  - reservedIp
+---
+apiVersion: danm.io/v1
+kind: ClusterNetwork
+metadata:
+  name: examplel3
+spec:
+  NetworkID: examplel3
+  NetworkType: ipvlan
+  Options:
+    host_device: ens4
+    vlan: 500
+    container_prefix: ext
+    rt_tables: 100
+    cidr: 10.100.1.0/24
+    allocation_pool:
+      start: 10.100.1.100
+      end: 10.100.1.200
+    net6: 2a00:8a00:a000:1193::/64
+---
+apiVersion: danm.io/v1
+kind: ClusterNetwork
+metadata:
+  name: non-reservable-l3
+spec:
+  NetworkID: examplel3
+  NetworkType: ipvlan
+  Options:
+    host_device: ens4
+    vlan: 500
+    container_prefix: ext
+    rt_tables: 100
+    cidr: 10.100.1.0/24
+    allocation_pool:
+      start: 10.100.1.100
+      end: 10.100.1.200
+    net6: 2a00:8a00:a000:1193::/64
+---
+apiVersion: danm.io/v1
+kind: TenantNetwork
+metadata:
+  name: internal
+  namespace: default
+spec:
+  NetworkID: internal
+  NetworkType: ipvlan
+  Options:
+    host_device: ens4
+    container_prefix: int
+    rt_tables: 200
+    cidr: 10.240.1.0/24
+    allocation_pool:
+      start: 10.240.1.100
+      end: 10.240.1.200
+    net6: 3a00:8a00:a000:1193::/64
