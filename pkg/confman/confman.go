@@ -164,8 +164,8 @@ func CheckCnetPrivilege(client danmclientset.Interface, cnet, privilege string) 
 	isCnetAllowed := false
 	for _, allowedCnet := range tconf.AllowedCNets {
 		if cnet == allowedCnet.Name {
-			for _, privilege := range allowedCnet.Privileges {
-				if privilege == ReservedIpPrivilege {
+			for _, priv := range allowedCnet.Privileges {
+				if priv == privilege {
 					isCnetAllowed = true
 					break
 				}

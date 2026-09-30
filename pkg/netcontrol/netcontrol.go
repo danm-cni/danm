@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -614,33 +615,33 @@ func GetDefaultNetwork(danmClient danmclientset.Interface, defaultNetworkName, n
 }
 
 func GetNetworkFromInterface(danmClient danmclientset.Interface, iface datastructs.Interface, nameSpace string) (*danmtypes.DanmNet, error) {
-	var netName, netType string
+	var err error
 	if iface.Network != "" {
-		netName = iface.Network
-		netType = DanmNetKind
-		dnet, err := danmClient.DanmV1().DanmNets(nameSpace).Get(context.TODO(), iface.Network, meta_v1.GetOptions{})
-		if err == nil && dnet.ObjectMeta.Name == iface.Network {
-			dnet.TypeMeta.Kind = netType
+		var dnet *danmtypes.DanmNet
+		dnet, err = danmClient.DanmV1().DanmNets(nameSpace).Get(context.TODO(), iface.Network, meta_v1.GetOptions{})
+		if err == nil {
+			dnet.TypeMeta.Kind = DanmNetKind
 			return dnet, nil
 		}
 	} else if iface.TenantNetwork != "" {
-		netName = iface.TenantNetwork
-		netType = TenantNetworkKind
-		tnet, err := danmClient.DanmV1().TenantNetworks(nameSpace).Get(context.TODO(), iface.TenantNetwork, meta_v1.GetOptions{})
-		if err == nil && tnet.ObjectMeta.Name == iface.TenantNetwork {
+		var tnet *danmtypes.TenantNetwork
+		tnet, err = danmClient.DanmV1().TenantNetworks(nameSpace).Get(context.TODO(), iface.TenantNetwork, meta_v1.GetOptions{})
+		if err == nil {
 			dnet := ConvertTnetToDnet(tnet)
 			return dnet, nil
 		}
 	} else if iface.ClusterNetwork != "" {
-		netName = iface.ClusterNetwork
-		netType = ClusterNetworkKind
-		cnet, err := danmClient.DanmV1().ClusterNetworks().Get(context.TODO(), iface.ClusterNetwork, meta_v1.GetOptions{})
-		if err == nil && cnet.ObjectMeta.Name == iface.ClusterNetwork {
+		var cnet *danmtypes.ClusterNetwork
+		cnet, err = danmClient.DanmV1().ClusterNetworks().Get(context.TODO(), iface.ClusterNetwork, meta_v1.GetOptions{})
+		if err == nil {
 			dnet := ConvertCnetToDnet(cnet)
 			return dnet, nil
 		}
 	}
-	return nil, errors.New("requested network:" + netName + " of type:" + netType + " in namespace:" + nameSpace + " does not exist")
+	if err == nil {
+		err = errors.New("network connection request did not contain a valid type from [DanmNet, TenantNetwork, ClusterNetwork]")
+	}
+	return nil, err
 }
 
 func GetNetworkFromEp(danmClient danmclientset.Interface, ep *danmtypes.DanmEp) (*danmtypes.DanmNet, error) {
@@ -659,14 +660,14 @@ func GetNetworkFromEp(danmClient danmclientset.Interface, ep *danmtypes.DanmEp) 
 
 func GetNetworkFromReference(danmClient danmclientset.Interface, name, namespace, kind string) (*danmtypes.DanmNet, error) {
 	dummyIface := datastructs.Interface{}
-	if kind == DanmNetKind {
-		dummyIface.Network = name
-	}
-	if kind == TenantNetworkKind {
+	if kind == "" || kind == TenantNetworkKind {
 		dummyIface.TenantNetwork = name
 	}
 	if kind == ClusterNetworkKind {
 		dummyIface.ClusterNetwork = name
+	}
+	if dummyIface.TenantNetwork == "" && dummyIface.ClusterNetwork == "" {
+		return nil, fmt.Errorf(("network reference did not contain a valid type from [TenantNetwork, ClusterNetwork]"))
 	}
 	return GetNetworkFromInterface(danmClient, dummyIface, namespace)
 }

@@ -61,7 +61,7 @@ func (validator *Validator) ValidateNetwork(responseWriter http.ResponseWriter, 
 		return
 	}
 	//Status and allocation changes are exempt and fast-tracked
-	if isItAnAutomatedUpdate(admissionReview.Request.Operation, admissionReview.Request.SubResource, oldManifest, newManifest) {
+	if isItAnAutomatedUpdate(admissionReview.Request.Operation, oldManifest, newManifest) {
 		SendAdmissionResponse(responseWriter, v1beta1.AdmissionReview{Response: &v1beta1.AdmissionResponse{UID: admissionReview.Request.UID, Allowed: true}})
 		return
 	}
@@ -244,7 +244,21 @@ func createPatchListFromNetChanges(origNetwork danmtypes.DanmNet, changedNetwork
 }
 
 // TODO: consider changing this to UserInfo based validation to truly differentiate between tenant network administrator and DANM Controller requests
-func isItAnAutomatedUpdate(opType v1beta1.Operation, subResource string, oldManifest, newManifest *danmtypes.DanmNet) bool {
-	return opType == v1beta1.Update &&
-		(subResource != "" || oldManifest.Spec.Options.Alloc != newManifest.Spec.Options.Alloc || oldManifest.Spec.Options.Alloc6 != newManifest.Spec.Options.Alloc6)
+func isItAnAutomatedUpdate(opType v1beta1.Operation, oldManifest, newManifest *danmtypes.DanmNet) bool {
+	if opType != v1beta1.Update {
+		return false
+	}
+	if oldManifest.Spec.Options.Alloc == newManifest.Spec.Options.Alloc &&
+		oldManifest.Spec.Options.Alloc6 == newManifest.Spec.Options.Alloc6 {
+		return false
+	}
+	//IPAM always rewrites these together with the bitmasks, so they are exempt too.
+	//Any other .Spec changes in the same request means this is not a DANM Controller update
+	oldSpec, newSpec := oldManifest.Spec, newManifest.Spec
+	for _, spec := range []*danmtypes.DanmNetSpec{&oldSpec, &newSpec} {
+		spec.Options.Alloc, spec.Options.Alloc6 = "", ""
+		spec.Options.Pool.LastIp, spec.Options.Pool6.LastIp = "", ""
+		spec.Options.Pool6.Cidr, spec.Options.Pool6.Start, spec.Options.Pool6.End = "", "", ""
+	}
+	return reflect.DeepEqual(oldSpec, newSpec)
 }

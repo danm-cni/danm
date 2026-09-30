@@ -11,6 +11,7 @@ import (
 	"github.com/danm-cni/danm/pkg/datastructs"
 	"github.com/danm-cni/danm/pkg/ipam"
 	"github.com/danm-cni/danm/test/utils"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -96,7 +97,7 @@ func (netClient *NetClientStub) Get(ctx context.Context, netName string, options
 			return &testNet, nil
 		}
 	}
-	return nil, errors.New("let's test error case as well")
+	return nil, apierrors.NewNotFound(danmtypes.SchemeGroupVersion.WithResource("danmnets").GroupResource(), netName)
 }
 
 func (netClient *NetClientStub) Watch(ctx context.Context, opts meta_v1.ListOptions) (watch.Interface, error) {

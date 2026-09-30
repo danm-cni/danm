@@ -167,6 +167,7 @@ var validateNetworkTcs = []struct {
 	{"CreateStaticCnetWithVxlan", "", "cnet-vxlan", CnetType, v1beta1.Create, nil, nil, false, nil, 0},
 	{"CreateStaticTnetWithVxlan", "", "tnet-static-vxlan", TnetType, v1beta1.Create, twoDevs, nil, false, allocAndPoolAndVxlan, 1},
 	{"TNetFasttrackAllocUpdate", "alloc-without-cidr", "new-alloc-without-cidr", TnetType, v1beta1.Update, nil, nil, false, nil, 0},
+	{"TNetFasttrackLip6Update", "alloc6-lip-without-cidr", "new-alloc6-lip-without-cidr", TnetType, v1beta1.Update, nil, nil, false, nil, 0},
 }
 
 var (
@@ -245,6 +246,14 @@ var (
 		{
 			ObjectMeta: meta_v1.ObjectMeta{Name: "new-alloc-without-cidr"},
 			Spec:       danmtypes.DanmNetSpec{NetworkType: "ipvlan", NetworkID: "nanomsg", Options: danmtypes.DanmNetOption{Alloc: "gAAAAAAAAAAAAAAEEEE", Pool: danmtypes.IpPool{Start: "192.168.1.1"}}},
+		},
+		{
+			ObjectMeta: meta_v1.ObjectMeta{Name: "alloc6-lip-without-cidr"},
+			Spec:       danmtypes.DanmNetSpec{NetworkType: "ipvlan", NetworkID: "nanomsg", Options: danmtypes.DanmNetOption{Alloc6: "gAAAAAAAAAAAAAAE", Pool6: danmtypes.IpPoolV6{IpPool: danmtypes.IpPool{LastIp: "2001:db8:85a3::8a2e:370:7334"}}}},
+		},
+		{
+			ObjectMeta: meta_v1.ObjectMeta{Name: "new-alloc6-lip-without-cidr"},
+			Spec:       danmtypes.DanmNetSpec{NetworkType: "ipvlan", NetworkID: "nanomsg", Options: danmtypes.DanmNetOption{Alloc6: "gAAAAAAAAAAAAAAEEEE", Pool6: danmtypes.IpPoolV6{IpPool: danmtypes.IpPool{LastIp: "2001:db8:85a3::8a2e:370:7335"}}}},
 		},
 		{
 			ObjectMeta: meta_v1.ObjectMeta{Name: "allocstart-outside-cidr"},

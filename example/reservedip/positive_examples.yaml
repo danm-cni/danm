@@ -1,0 +1,28 @@
+---
+apiVersion: danm.io/v1
+kind: ReservedIP
+metadata:
+  name: cnet
+  namespace: default
+spec:
+  network:
+    name: examplel3
+    type: ClusterNetwork
+  ips:
+  - address: 10.100.1.50
+  - address: 2a00:8a00:a000:1193::1
+    shareable: true
+---
+apiVersion: danm.io/v1
+kind: ReservedIP
+metadata:
+  name: tnet
+  namespace: default
+spec:
+  network:
+    name: internal
+    type: TenantNetwork
+  ips:
+  - address: 10.240.1.50
+  - address: 3a00:8a00:a000:1193::1
+    shareable: true

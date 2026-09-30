@@ -6,14 +6,16 @@ import (
 	"strings"
 
 	danmtypes "github.com/danm-cni/danm/crd/apis/danm/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 )
 
 type TnetClientStub struct {
-	TestTnets []danmtypes.TenantNetwork
-	Status    danmtypes.DanmNetStatus
+	TestTnets          []danmtypes.TenantNetwork
+	Statuses           map[string]danmtypes.DanmNetStatus
+	UpdateStatusCalled int
 }
 
 func newTnetClientStub(nets []danmtypes.TenantNetwork) *TnetClientStub {
@@ -30,7 +32,11 @@ func (tnetClient *TnetClientStub) Update(ctx context.Context, obj *danmtypes.Ten
 }
 
 func (tnetClient *TnetClientStub) UpdateStatus(ctx context.Context, tenantNetwork *danmtypes.TenantNetwork, opts meta_v1.UpdateOptions) (*danmtypes.TenantNetwork, error) {
-	tnetClient.Status = tenantNetwork.Status
+	if tnetClient.Statuses == nil {
+		tnetClient.Statuses = make(map[string]danmtypes.DanmNetStatus)
+	}
+	tnetClient.Statuses[tenantNetwork.Name] = tenantNetwork.Status
+	tnetClient.UpdateStatusCalled++
 	return tenantNetwork, nil
 }
 
@@ -48,10 +54,10 @@ func (tnetClient *TnetClientStub) Get(ctx context.Context, netName string, optio
 	}
 	for _, testNet := range tnetClient.TestTnets {
 		if testNet.ObjectMeta.Name == netName {
-			return &testNet, nil
+			return testNet.DeepCopy(), nil
 		}
 	}
-	return nil, nil
+	return nil, apierrors.NewNotFound(danmtypes.SchemeGroupVersion.WithResource("tenantnetworks").GroupResource(), netName)
 }
 
 func (tnetClient *TnetClientStub) Watch(ctx context.Context, opts meta_v1.ListOptions) (watch.Interface, error) {
