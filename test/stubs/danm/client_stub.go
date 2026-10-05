@@ -12,6 +12,7 @@ type ClientStub struct {
 	TnetClient  *TnetClientStub
 	CnetClient  *CnetClientStub
 	TconfClient *TconfClientStub
+	RipClient   *RipClientStub
 }
 
 func (client *ClientStub) DanmNets(namespace string) client.DanmNetInterface {
@@ -47,7 +48,11 @@ func (client *ClientStub) ClusterNetworks() client.ClusterNetworkInterface {
 }
 
 func (client *ClientStub) ReservedIPs(namespace string) client.ReservedIPInterface {
-	return nil
+	if client.RipClient == nil {
+		client.RipClient = newRipClientStub()
+	}
+	client.RipClient.Namespace = namespace
+	return client.RipClient
 }
 
 func (client *ClientStub) RESTClient() rest.Interface {

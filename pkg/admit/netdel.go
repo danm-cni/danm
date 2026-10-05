@@ -1,17 +1,18 @@
 package admit
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
 	"github.com/danm-cni/danm/pkg/confman"
 	"github.com/danm-cni/danm/pkg/danmep"
 	"k8s.io/api/admission/v1beta1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 )
 
-// A GIGANTIC DISCLAIMER: THIS DOES NOT WORK BEFORE K8S 1.15!
-// See ticket: https://github.com/kubernetes/kubernetes/pull/76346
-// Tested with 1.15 though, works like a charm
 func (validator *Validator) DeleteNetwork(responseWriter http.ResponseWriter, request *http.Request) {
 	admissionReview, err := DecodeAdmissionReview(request)
 	if err != nil {
@@ -34,19 +35,23 @@ func (validator *Validator) DeleteNetwork(responseWriter http.ResponseWriter, re
 			errors.New("Network cannot be deleted because there are Pods still connected to it e.g. Pod:"+connectedEp.Spec.Pod+" in namespace:"+connectedEp.ObjectMeta.Namespace))
 		return
 	}
-	if oldManifest.TypeMeta.Kind == "TenantNetwork" &&
+	//A dry run DELETE does not remove the network, so neither its VNI, nor its ReservedIPs shall be freed-up
+	isDryRun := admissionReview.Request.DryRun != nil && *admissionReview.Request.DryRun
+	if !isDryRun && oldManifest.TypeMeta.Kind == "TenantNetwork" &&
 		(oldManifest.Spec.Options.Vlan != 0 || oldManifest.Spec.Options.Vxlan != 0) {
 		tconf, err := confman.GetTenantConfig(validator.Client)
-		if err != nil {
-			SendErroneousAdmissionResponse(responseWriter, admissionReview.Request,
-				errors.New("The network's VNI could not be freed, because:"+err.Error()))
-			return
-		}
-		err = confman.Free(validator.Client, tconf, oldManifest)
-		if err != nil {
-			SendErroneousAdmissionResponse(responseWriter, admissionReview.Request,
-				errors.New("The network's VNI could not be freed, because:"+err.Error()))
-			return
+		if !apierrors.IsNotFound(err) {
+			if err != nil {
+				SendErroneousAdmissionResponse(responseWriter, admissionReview.Request,
+					errors.New("The network's VNI could not be freed, because:"+err.Error()))
+				return
+			}
+			err = confman.Free(validator.Client, tconf, oldManifest)
+			if err != nil {
+				SendErroneousAdmissionResponse(responseWriter, admissionReview.Request,
+					errors.New("The network's VNI could not be freed, because:"+err.Error()))
+				return
+			}
 		}
 	}
 	responseAdmissionReview := v1beta1.AdmissionReview{
@@ -54,4 +59,14 @@ func (validator *Validator) DeleteNetwork(responseWriter http.ResponseWriter, re
 	}
 	responseAdmissionReview.Response.UID = admissionReview.Request.UID
 	SendAdmissionResponse(responseWriter, responseAdmissionReview)
+	if !isDryRun && len(oldManifest.Status.ReservedIPs) != 0 {
+		for _, rip := range oldManifest.Status.ReservedIPs {
+			labelSelectorListOpt := meta_v1.ListOptions{LabelSelector: labels.Set{
+				NetworkNameLabel: oldManifest.Name,
+				NetworkTypeLabel: oldManifest.Kind,
+			}.String()}
+			validator.Client.DanmV1().ReservedIPs(rip.Namespace).DeleteCollection(context.TODO(),
+				meta_v1.DeleteOptions{}, labelSelectorListOpt)
+		}
+	}
 }

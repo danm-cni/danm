@@ -18,6 +18,7 @@ rules:
   - tenantnetworks/status
   - clusternetworks
   - clusternetworks/status
+  - reservedips
   verbs: ["*"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -90,7 +91,7 @@ webhooks:
         resources: ["danmnets", "clusternetworks", "tenantnetworks"]
     failurePolicy: Fail
     timeoutSeconds: 25
-    sideEffects: None
+    sideEffects: NoneOnDryRun
     admissionReviewVersions:
     - "v1beta1"
   - name: reservedipvalidation.danm.io

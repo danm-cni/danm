@@ -90,8 +90,8 @@ func validateConfig(oldManifest, newManifest *danmtypes.TenantConfig, opType adm
 }
 
 func validateTenantconfig(oldManifest, newManifest *danmtypes.TenantConfig, opType admv1beta1.Operation) error {
-	if len(newManifest.HostDevices) == 0 && len(newManifest.NetworkIds) == 0 {
-		return errors.New("Either hostDevices, or networkIds must be provided!")
+	if len(newManifest.HostDevices) == 0 && len(newManifest.NetworkIds) == 0 && len(newManifest.AllowedCNets) == 0 {
+		return errors.New("Either hostDevices, networkIds or allowedClusterNetworks must be provided!")
 	}
 	var err error
 	for _, ifaceConf := range newManifest.HostDevices {

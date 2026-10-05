@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"slices"
+	"strings"
 
 	danmtypes "github.com/danm-cni/danm/crd/apis/danm/v1"
 	danmclientset "github.com/danm-cni/danm/crd/client/clientset/versioned"
@@ -14,6 +15,12 @@ import (
 	"github.com/danm-cni/danm/pkg/netcontrol"
 	admv1beta1 "k8s.io/api/admission/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+)
+
+const (
+	NetworkNameLabel = "danm.k8s.io/network-name"
+	NetworkTypeLabel = "danm.k8s.io/network-type"
+	RipLabelsPath    = "/metadata/labels"
 )
 
 func (validator *Validator) ValidateReservedIp(responseWriter http.ResponseWriter, request *http.Request) {
@@ -50,8 +57,9 @@ func (validator *Validator) ValidateReservedIp(responseWriter http.ResponseWrite
 		}
 	}
 	responseAdmissionReview := admv1beta1.AdmissionReview{
-		Response: &admv1beta1.AdmissionResponse{UID: admissionReview.Request.UID, Allowed: true},
+		Response: CreateReviewResponseFromPatches(createPatchListFromRipLabels(newManifest)),
 	}
+	responseAdmissionReview.Response.UID = admissionReview.Request.UID
 	SendAdmissionResponse(responseWriter, responseAdmissionReview)
 }
 
@@ -214,4 +222,38 @@ func (validator *Validator) updateOldNetwork(oldNet *danmtypes.DanmNet, oldRip *
 		return fmt.Errorf("network status update failed due to resource version mismatch, please retry the operation!")
 	}
 	return err
+}
+
+func createPatchListFromRipLabels(newIp *danmtypes.ReservedIP) []Patch {
+	if newIp == nil {
+		return nil
+	}
+	netType := newIp.Spec.Network.Type
+	if netType == "" {
+		netType = netcontrol.TenantNetworkKind
+	}
+	desiredLabels := []struct{ key, value string }{
+		{NetworkNameLabel, newIp.Spec.Network.Name},
+		{NetworkTypeLabel, netType},
+	}
+	//JSON Patch "add" fails if the parent of the modified path does not exist, so the whole label set needs to be added at once to an unlabelled object
+	if len(newIp.ObjectMeta.Labels) == 0 {
+		labels := make(map[string]string, len(desiredLabels))
+		for _, label := range desiredLabels {
+			labels[label.key] = label.value
+		}
+		return []Patch{{Op: "add", Path: RipLabelsPath, Value: labels}}
+	}
+	patchList := make([]Patch, 0)
+	for _, label := range desiredLabels {
+		if newIp.ObjectMeta.Labels[label.key] != label.value {
+			patchList = append(patchList, Patch{Op: "add", Path: RipLabelsPath + "/" + escapeJsonPointer(label.key), Value: label.value})
+		}
+	}
+	return patchList
+}
+
+// JSON Pointer reserves "~" and "/", so prefixed label keys need to be escaped as per RFC 6901
+func escapeJsonPointer(key string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(key, "~", "~0"), "/", "~1")
 }
