@@ -158,6 +158,12 @@ var (
 				"flannel": "flannel",
 			},
 		},
+		{
+			ObjectMeta: meta_v1.ObjectMeta{Name: "acnet-success"}, TypeMeta: meta_v1.TypeMeta{Kind: "TenantConfig"},
+			AllowedCNets: []danmtypes.AllowedCNet{
+				{Name: "test", Privileges: []string{"reservedIp"}},
+			},
+		},
 	}
 )
 
@@ -193,6 +199,7 @@ var validateTconfTcs = []struct {
 	{"longNidWithDynamicNeType", "", "longnid-sriov", "", true, nil},
 	{"okayNids", "", "shortnid", "", false, nil},
 	{"noChangeInIfaces", "old-iface", "new-iface", v1beta1.Update, false, nil},
+	{"allowedCnetSuccess", "", "acnet-success", v1beta1.Create, false, nil},
 }
 
 var (

@@ -38,6 +38,7 @@ spec:
                 properties:
                   name:
                     type: string
+                    maxLength: 63
                   type:
                     type: string
                     enum: [ClusterNetwork, TenantNetwork]

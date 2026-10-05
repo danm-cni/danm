@@ -217,6 +217,15 @@ func validatePatches(response *v1beta1.AdmissionResponse, expectedPatches []admi
 		for _, recPatch := range patches {
 			if expPatch.Path == recPatch.Path {
 				foundMatchingPatch = true
+				if expPatch.Op != "" && expPatch.Op != recPatch.Op {
+					return errors.New("Patch modifying path:" + expPatch.Path + " used operation:" + recPatch.Op + " instead of the expected:" + expPatch.Op)
+				}
+				if expPatch.Value != nil {
+					err = matchPatchValues(expPatch, recPatch)
+					if err != nil {
+						return err
+					}
+				}
 				break
 			}
 		}
@@ -228,6 +237,21 @@ func validatePatches(response *v1beta1.AdmissionResponse, expectedPatches []admi
 		return errors.New("received number of patches:" + strconv.Itoa(len(patches)) + " was not what we expected:" + strconv.Itoa(len(expectedPatches)))
 	}
 
+	return nil
+}
+
+func matchPatchValues(expPatch, recPatch admit.Patch) error {
+	expValue, err := json.Marshal(expPatch.Value)
+	if err != nil {
+		return err
+	}
+	recValue, err := json.Marshal(recPatch.Value)
+	if err != nil {
+		return err
+	}
+	if string(expValue) != string(recValue) {
+		return errors.New("Patch modifying path:" + expPatch.Path + " contained value:" + string(recValue) + " instead of the expected:" + string(expValue))
+	}
 	return nil
 }
 

@@ -154,6 +154,40 @@ var (
 		},
 		{
 			TypeMeta:   meta_v1.TypeMeta{Kind: "ReservedIP"},
+			ObjectMeta: meta_v1.ObjectMeta{Name: "alreadyLabelled", Namespace: "rip-test", Labels: map[string]string{"unrelated": "label"}},
+			Spec: danmtypes.ReservedIPSpec{
+				Network: danmtypes.RipNetworkSelector{Name: "superDualStackWithStatus", Type: "ClusterNetwork"},
+				Ips:     []danmtypes.RipIP{{Address: "192.168.1.70", Shareable: false}},
+			},
+		},
+		{
+			TypeMeta: meta_v1.TypeMeta{Kind: "ReservedIP"},
+			ObjectMeta: meta_v1.ObjectMeta{Name: "correctlyLabelled", Namespace: "rip-test",
+				Labels: map[string]string{admit.NetworkNameLabel: "superDualStack", admit.NetworkTypeLabel: "TenantNetwork"}},
+			Spec: danmtypes.ReservedIPSpec{
+				Network: danmtypes.RipNetworkSelector{Name: "superDualStack", Type: "TenantNetwork"},
+				Ips:     []danmtypes.RipIP{{Address: "192.168.1.70", Shareable: false}},
+			},
+		},
+		{
+			TypeMeta: meta_v1.TypeMeta{Kind: "ReservedIP"},
+			ObjectMeta: meta_v1.ObjectMeta{Name: "staleTypeLabel", Namespace: "rip-test",
+				Labels: map[string]string{admit.NetworkNameLabel: "superDualStack", admit.NetworkTypeLabel: "ClusterNetwork"}},
+			Spec: danmtypes.ReservedIPSpec{
+				Network: danmtypes.RipNetworkSelector{Name: "superDualStack", Type: "TenantNetwork"},
+				Ips:     []danmtypes.RipIP{{Address: "192.168.1.70", Shareable: false}},
+			},
+		},
+		{
+			TypeMeta:   meta_v1.TypeMeta{Kind: "ReservedIP"},
+			ObjectMeta: meta_v1.ObjectMeta{Name: "defaultedType", Namespace: "rip-test"},
+			Spec: danmtypes.ReservedIPSpec{
+				Network: danmtypes.RipNetworkSelector{Name: "superDualStack"},
+				Ips:     []danmtypes.RipIP{{Address: "192.168.1.70", Shareable: false}},
+			},
+		},
+		{
+			TypeMeta:   meta_v1.TypeMeta{Kind: "ReservedIP"},
 			ObjectMeta: meta_v1.ObjectMeta{Name: "deleteLastRipInStatus", Namespace: "rip-test"},
 			Spec: danmtypes.ReservedIPSpec{
 				Network: danmtypes.RipNetworkSelector{Name: "deleteLastRip", Type: "ClusterNetwork"},
@@ -299,6 +333,31 @@ var (
 	}
 )
 
+var (
+	tnetDsLabels = []admit.Patch{
+		{Op: "add", Path: "/metadata/labels", Value: map[string]string{
+			admit.NetworkNameLabel: "superDualStack",
+			admit.NetworkTypeLabel: "TenantNetwork"}},
+	}
+	cnetDsLabels = []admit.Patch{
+		{Op: "add", Path: "/metadata/labels", Value: map[string]string{
+			admit.NetworkNameLabel: "superDualStackWithStatus",
+			admit.NetworkTypeLabel: "ClusterNetwork"}},
+	}
+	cnetDupeLabels = []admit.Patch{
+		{Op: "add", Path: "/metadata/labels", Value: map[string]string{
+			admit.NetworkNameLabel: "superDualStackWithStatusDupe",
+			admit.NetworkTypeLabel: "ClusterNetwork"}},
+	}
+	labelsMergedIntoExistingSet = []admit.Patch{
+		{Op: "add", Path: "/metadata/labels/danm.k8s.io~1network-name", Value: "superDualStackWithStatus"},
+		{Op: "add", Path: "/metadata/labels/danm.k8s.io~1network-type", Value: "ClusterNetwork"},
+	}
+	onlyTypeLabelRefreshed = []admit.Patch{
+		{Op: "add", Path: "/metadata/labels/danm.k8s.io~1network-type", Value: "TenantNetwork"},
+	}
+)
+
 var validateRipTcs = []struct {
 	tcName                string
 	oldRipName            string
@@ -310,31 +369,36 @@ var validateRipTcs = []struct {
 	expectedOldCnetStatus *danmtypes.DanmNetStatus
 	expectedTnetStatus    *danmtypes.DanmNetStatus
 	expectedCnetStatus    *danmtypes.DanmNetStatus
+	expectedPatches       []admit.Patch
 }{
-	{"emptyRequest", "", "", "", v1beta1.Create, true, nil, nil, nil, nil},
-	{"malformedOldObject", "malformed", "", "", v1beta1.Create, true, nil, nil, nil, nil},
-	{"malformedNewObject", "", "malformed", "", v1beta1.Create, true, nil, nil, nil, nil},
-	{"emptyRip", "", "empty-rip", "", v1beta1.Create, true, nil, nil, nil, nil},
-	{"createNoNetwork", "", "nonet", "bueno", v1beta1.Create, true, nil, nil, nil, nil},
-	{"cnetWoTconf", "", "cnet", "", v1beta1.Create, true, nil, nil, nil, nil},
-	{"cnetNotAllowed", "", "cnet", "vlan", v1beta1.Create, true, nil, nil, nil, nil},
-	{"cnetWrongPrivilege", "", "cnet", "wrongPriv", v1beta1.Create, true, nil, nil, nil, nil},
-	{"malformedIp", "", "wrongIp", "", v1beta1.Create, true, nil, nil, nil, nil},
-	{"emptyCidr", "", "v4NoCidr", "", v1beta1.Create, true, nil, nil, nil, nil},
-	{"v4OutsideCidr", "", "v4OutsideCidr", "", v1beta1.Create, true, nil, nil, nil, nil},
-	{"emptyNet6", "", "v6NoCidr", "", v1beta1.Create, true, nil, nil, nil, nil},
-	{"v6OutsideCidr", "", "v6OutsideCidr", "", v1beta1.Create, true, nil, nil, nil, nil},
-	{"doubleV4", "", "doubleV4", "", v1beta1.Create, true, nil, nil, nil, nil},
-	{"doubleV6", "", "doubleV6", "", v1beta1.Create, true, nil, nil, nil, nil},
-	{"dsTnetSuccessNewStatus", "", "dsTnetSuccess", "", v1beta1.Create, false, nil, nil, &ripTestStatus, nil},
-	{"dsCnetSuccessStatusAppend", "", "dsCnetSuccess", "bueno", v1beta1.Create, false, nil, nil, nil, &ripTestStatusCnet},
-	{"dsCnetSuccessStatusNoAppendDueToDupe", "", "dsCnetSuccessDupe", "bueno", v1beta1.Create, false, nil, nil, nil, &ripTestStatusCnetDupe},
-	{"dsCnetUpdateSuccessStatusAppend", "dsCnetSuccessUpdate", "dsCnetSuccess", "bueno", v1beta1.Update, false, nil, nil, nil, &ripTestStatusCnet},
-	{"dsCnetUpdateSuccessStatusNoAppendDueToDupe", "dsCnetSuccessDupeUpdate", "dsCnetSuccessDupe", "bueno", v1beta1.Update, false, nil, nil, nil, &ripTestStatusCnetDupe},
-	{"dryDsCnetSuccessStatusAppend", "", "dsCnetSuccess", "bueno", v1beta1.Create, false, nil, nil, nil, nil},
-	{"deleteNoNetworkSuccess", "deleteNoNetwork", "", "bueno", v1beta1.Delete, false, nil, nil, nil, nil},
-	{"dsCnetChangeNetworkRefSuccess", "dsCnetSuccessDupe", "dsCnetSuccessUpdate", "bueno", v1beta1.Update, false, nil, &ripTestStatusCnetOld, nil, &ripUpdateNetRef},
-	{"deleteLastRipInNs", "deleteLastRipInStatus", "", "", v1beta1.Delete, false, nil, &ripDeleteLastObject, nil, nil},
+	{"emptyRequest", "", "", "", v1beta1.Create, true, nil, nil, nil, nil, nil},
+	{"malformedOldObject", "malformed", "", "", v1beta1.Create, true, nil, nil, nil, nil, nil},
+	{"malformedNewObject", "", "malformed", "", v1beta1.Create, true, nil, nil, nil, nil, nil},
+	{"emptyRip", "", "empty-rip", "", v1beta1.Create, true, nil, nil, nil, nil, nil},
+	{"createNoNetwork", "", "nonet", "bueno", v1beta1.Create, true, nil, nil, nil, nil, nil},
+	{"cnetWoTconf", "", "cnet", "", v1beta1.Create, true, nil, nil, nil, nil, nil},
+	{"cnetNotAllowed", "", "cnet", "vlan", v1beta1.Create, true, nil, nil, nil, nil, nil},
+	{"cnetWrongPrivilege", "", "cnet", "wrongPriv", v1beta1.Create, true, nil, nil, nil, nil, nil},
+	{"malformedIp", "", "wrongIp", "", v1beta1.Create, true, nil, nil, nil, nil, nil},
+	{"emptyCidr", "", "v4NoCidr", "", v1beta1.Create, true, nil, nil, nil, nil, nil},
+	{"v4OutsideCidr", "", "v4OutsideCidr", "", v1beta1.Create, true, nil, nil, nil, nil, nil},
+	{"emptyNet6", "", "v6NoCidr", "", v1beta1.Create, true, nil, nil, nil, nil, nil},
+	{"v6OutsideCidr", "", "v6OutsideCidr", "", v1beta1.Create, true, nil, nil, nil, nil, nil},
+	{"doubleV4", "", "doubleV4", "", v1beta1.Create, true, nil, nil, nil, nil, nil},
+	{"doubleV6", "", "doubleV6", "", v1beta1.Create, true, nil, nil, nil, nil, nil},
+	{"dsTnetSuccessNewStatus", "", "dsTnetSuccess", "", v1beta1.Create, false, nil, nil, &ripTestStatus, nil, tnetDsLabels},
+	{"dsCnetSuccessStatusAppend", "", "dsCnetSuccess", "bueno", v1beta1.Create, false, nil, nil, nil, &ripTestStatusCnet, cnetDsLabels},
+	{"dsCnetSuccessStatusNoAppendDueToDupe", "", "dsCnetSuccessDupe", "bueno", v1beta1.Create, false, nil, nil, nil, &ripTestStatusCnetDupe, cnetDupeLabels},
+	{"dsCnetUpdateSuccessStatusAppend", "dsCnetSuccessUpdate", "dsCnetSuccess", "bueno", v1beta1.Update, false, nil, nil, nil, &ripTestStatusCnet, cnetDsLabels},
+	{"dsCnetUpdateSuccessStatusNoAppendDueToDupe", "dsCnetSuccessDupeUpdate", "dsCnetSuccessDupe", "bueno", v1beta1.Update, false, nil, nil, nil, &ripTestStatusCnetDupe, cnetDupeLabels},
+	{"dryDsCnetSuccessStatusAppend", "", "dsCnetSuccess", "bueno", v1beta1.Create, false, nil, nil, nil, nil, cnetDsLabels},
+	{"deleteNoNetworkSuccess", "deleteNoNetwork", "", "bueno", v1beta1.Delete, false, nil, nil, nil, nil, nil},
+	{"dsCnetChangeNetworkRefSuccess", "dsCnetSuccessDupe", "dsCnetSuccessUpdate", "bueno", v1beta1.Update, false, nil, &ripTestStatusCnetOld, nil, &ripUpdateNetRef, cnetDsLabels},
+	{"deleteLastRipInNs", "deleteLastRipInStatus", "", "", v1beta1.Delete, false, nil, &ripDeleteLastObject, nil, nil, nil},
+	{"labelsMergedIntoAlreadyLabelledRip", "", "alreadyLabelled", "bueno", v1beta1.Create, false, nil, nil, nil, nil, labelsMergedIntoExistingSet},
+	{"noPatchWhenLabelsAreAlreadyCorrect", "", "correctlyLabelled", "", v1beta1.Create, false, nil, nil, nil, nil, nil},
+	{"staleLabelRefreshedOnUpdate", "", "staleTypeLabel", "", v1beta1.Update, false, nil, nil, nil, nil, onlyTypeLabelRefreshed},
+	{"emptyNetworkTypeDefaultedInLabel", "", "defaultedType", "", v1beta1.Create, false, nil, nil, nil, nil, tnetDsLabels},
 }
 
 func TestValidateReservedIp(t *testing.T) {
@@ -365,7 +429,7 @@ func TestValidateReservedIp(t *testing.T) {
 			testClient := stubs.NewClientSetStub(testArtifacts)
 			validator.Client = testClient
 			validator.ValidateReservedIp(writerStub, request)
-			err = utils.ValidateHttpResponse(writerStub, tc.isErrorExpected, nil)
+			err = utils.ValidateHttpResponse(writerStub, tc.isErrorExpected, tc.expectedPatches)
 			if err != nil {
 				t.Errorf("Received HTTP Response did not match expectation, because:%v", err)
 				return

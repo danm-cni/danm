@@ -2,6 +2,7 @@ package admit_tests
 
 import (
 	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	httpstub "github.com/danm-cni/danm/test/stubs/http"
 	"github.com/danm-cni/danm/test/utils"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 )
 
 var deleteNetworkTcs = []struct {
@@ -23,21 +25,29 @@ var deleteNetworkTcs = []struct {
 	shouldVniBeFreed          bool
 	expectedPatches           []admit.Patch
 	timesUpdateShouldBeCalled int
+	isDryRun                  bool
+	expectedRipDeletions      []ripDeletion
 }{
-	{"emptyRequest", "", nil, nil, true, false, nil, 0},
-	{"malformedOldObject", "malformed", nil, nil, true, false, nil, 0},
-	{"objectWithInvalidType", "invalid-type", nil, nil, false, false, nil, 0},
-	{"staticNetwork", "flannel", nil, nil, false, false, nil, 0},
-	{"noTenantConfig", "ipvlan", nil, nil, true, false, nil, 0},
-	{"missingInterFaceProfile", "ipvlan", delConf, nil, false, false, nil, 0},
-	{"missingDeviceProfile", "sriov", delConf, nil, false, false, nil, 0},
-	{"errorUpdating", "ipvlan", errConf, nil, true, true, nil, 1},
-	{"freeDevice", "ipvlan", validConf, nil, false, true, nil, 1},
-	{"freeDeviceStatic", "staticWithVni", validConf, nil, false, true, nil, 1},
-	{"freeDevicePool", "sriov", validConf, nil, false, true, nil, 1},
-	{"cannotDeleteDueToError", "ipvlan", validConf, errorEp, true, false, nil, 0},
-	{"cannotDeleteDueToConnectedPods", "ipvlan", validConf, existingPods, true, false, nil, 0},
-	{"noMatchingPods", "ipvlan", validConf, notMatchingPods, false, true, nil, 1},
+	{"emptyRequest", "", nil, nil, true, false, nil, 0, false, nil},
+	{"malformedOldObject", "malformed", nil, nil, true, false, nil, 0, false, nil},
+	{"objectWithInvalidType", "invalid-type", nil, nil, false, false, nil, 0, false, nil},
+	{"staticNetwork", "flannel", nil, nil, false, false, nil, 0, false, nil},
+	{"vlanNoTenantConfig", "ipvlan", nil, nil, false, false, nil, 0, false, nil},
+	{"missingInterFaceProfile", "ipvlan", delConf, nil, false, false, nil, 0, false, nil},
+	{"missingDeviceProfile", "sriov", delConf, nil, false, false, nil, 0, false, nil},
+	{"errorGettingTconf", "ipvlan", errConf, nil, true, true, nil, 0, false, nil},
+	{"errorUpdatingTconf", "ipvlan", errUpdateConf, nil, true, true, nil, 1, false, nil},
+	{"freeDevice", "ipvlan", validConf, nil, false, true, nil, 1, false, nil},
+	{"freeDeviceStatic", "staticWithVni", validConf, nil, false, true, nil, 1, false, nil},
+	{"freeDevicePool", "sriov", validConf, nil, false, true, nil, 1, false, nil},
+	{"cannotDeleteDueToError", "ipvlan", validConf, errorEp, true, false, nil, 0, false, nil},
+	{"cannotDeleteDueToConnectedPods", "ipvlan", validConf, existingPods, true, false, nil, 0, false, nil},
+	{"noMatchingPods", "ipvlan", validConf, notMatchingPods, false, true, nil, 1, false, nil},
+	{"ripsCleanedUpForTnet", "tnetWithRips", nil, nil, false, false, nil, 0, false, tnetRipDeletions},
+	{"ripsCleanedUpInEveryNsForCnet", "cnetWithRips", nil, nil, false, false, nil, 0, false, cnetRipDeletions},
+	{"dryRunDoesNotCleanUpTnetRips", "tnetWithRips", nil, nil, false, false, nil, 0, true, nil},
+	{"dryRunDoesNotCleanUpCnetRips", "cnetWithRips", nil, nil, false, false, nil, 0, true, nil},
+	{"dryRunDoesNotFreeVni", "ipvlan", validConf, nil, false, false, nil, 0, true, nil},
 }
 
 var (
@@ -69,6 +79,28 @@ var (
 			TypeMeta:   meta_v1.TypeMeta{Kind: "TenantNetwork"},
 			Spec:       danmtypes.DanmNetSpec{NetworkType: "sthingWithDevice", NetworkID: "nanomsg", Options: danmtypes.DanmNetOption{Device: "ens4", Vxlan: 500}},
 		},
+		{
+			ObjectMeta: meta_v1.ObjectMeta{Name: "tnetWithRips", Namespace: "rip-test"},
+			TypeMeta:   meta_v1.TypeMeta{Kind: "TenantNetwork"},
+			Spec:       danmtypes.DanmNetSpec{NetworkType: "ipvlan", NetworkID: "nanomsg"},
+			Status: danmtypes.DanmNetStatus{
+				ReservedIPs: []danmtypes.NetRipStatus{
+					{Namespace: "rip-test", Objects: []string{"rip1", "rip2"}},
+				},
+			},
+		},
+		{
+			ObjectMeta: meta_v1.ObjectMeta{Name: "cnetWithRips"},
+			TypeMeta:   meta_v1.TypeMeta{Kind: "ClusterNetwork"},
+			Spec:       danmtypes.DanmNetSpec{NetworkType: "ipvlan", NetworkID: "nanomsg"},
+			Status: danmtypes.DanmNetStatus{
+				ReservedIPs: []danmtypes.NetRipStatus{
+					{Namespace: "rip-test", Objects: []string{"rip1"}},
+					{Namespace: "default", Objects: []string{"rip2"}},
+					{Namespace: "sdm", Objects: []string{"rip3"}},
+				},
+			},
+		},
 	}
 	delConf = []danmtypes.TenantConfig{
 		{
@@ -79,6 +111,14 @@ var (
 		},
 	}
 	errConf = []danmtypes.TenantConfig{
+		{
+			ObjectMeta: meta_v1.ObjectMeta{Name: "error"},
+			HostDevices: []danmtypes.IfaceProfile{
+				{Name: "ens4", VniType: "vlan", VniRange: "1200-1300", Alloc: utils.ExhaustedAllocFor5k},
+				{Name: "nokia.k8s.io/sriov_ens1f0", VniType: "vlan", VniRange: "1500-1550", Alloc: utils.ExhaustedAllocFor5k}},
+		},
+	}
+	errUpdateConf = []danmtypes.TenantConfig{
 		{
 			ObjectMeta: meta_v1.ObjectMeta{Name: "errorupdate"},
 			HostDevices: []danmtypes.IfaceProfile{
@@ -142,6 +182,22 @@ var (
 	}
 )
 
+type ripDeletion struct {
+	namespace string
+	labels    labels.Set
+}
+
+var (
+	tnetRipDeletions = []ripDeletion{
+		{"rip-test", labels.Set{admit.NetworkNameLabel: "tnetWithRips", admit.NetworkTypeLabel: "TenantNetwork"}},
+	}
+	cnetRipDeletions = []ripDeletion{
+		{"rip-test", labels.Set{admit.NetworkNameLabel: "cnetWithRips", admit.NetworkTypeLabel: "ClusterNetwork"}},
+		{"default", labels.Set{admit.NetworkNameLabel: "cnetWithRips", admit.NetworkTypeLabel: "ClusterNetwork"}},
+		{"sdm", labels.Set{admit.NetworkNameLabel: "cnetWithRips", admit.NetworkTypeLabel: "ClusterNetwork"}},
+	}
+)
+
 func TestDeleteNetwork(t *testing.T) {
 	validator := admit.Validator{}
 	for _, tc := range deleteNetworkTcs {
@@ -149,7 +205,7 @@ func TestDeleteNetwork(t *testing.T) {
 			defer resetTconf(tc.tconf)
 			writerStub := httpstub.NewWriterStub()
 			oldNet, dnet, shouldOldMalform := getTestNet(tc.oldNetName, delNets)
-			request, err := utils.CreateHttpRequest(oldNet, nil, shouldOldMalform, false, "", false)
+			request, err := utils.CreateHttpRequest(oldNet, nil, shouldOldMalform, false, "", tc.isDryRun)
 			if err != nil {
 				t.Errorf("Could not create test HTTP Request object, because:%v", err)
 				return
@@ -178,8 +234,33 @@ func TestDeleteNetwork(t *testing.T) {
 			if tc.timesUpdateShouldBeCalled != timesUpdateWasCalled {
 				t.Errorf("%s", "TenantConfig should have been updated:"+strconv.Itoa(tc.timesUpdateShouldBeCalled)+" times, but it happened:"+strconv.Itoa(timesUpdateWasCalled)+" times instead")
 			}
+			err = validateRipDeletions(tc.expectedRipDeletions, testClient.DanmClient.RipClient)
+			if err != nil {
+				t.Errorf("ReservedIP cleanup did not match expectation, because:%v", err)
+			}
 		})
 	}
+}
+
+func validateRipDeletions(expectedDeletions []ripDeletion, ripClient *stubs.RipClientStub) error {
+	var deletedNamespaces, deletedSelectors []string
+	if ripClient != nil {
+		deletedNamespaces = ripClient.DeletedNamespaces
+		deletedSelectors = ripClient.DeletedSelectors
+	}
+	if len(expectedDeletions) != len(deletedSelectors) {
+		return errors.New("DeleteCollection was called " + strconv.Itoa(len(deletedSelectors)) + " times with selectors:" + strings.Join(deletedSelectors, " | ") + " instead of the expected " + strconv.Itoa(len(expectedDeletions)) + " times")
+	}
+	//Cleanup is expected to follow the order of the namespaces listed in the network's status
+	for index, expectedDeletion := range expectedDeletions {
+		if expectedDeletion.namespace != deletedNamespaces[index] {
+			return errors.New("ReservedIPs were deleted from namespace:" + deletedNamespaces[index] + " instead of the expected:" + expectedDeletion.namespace)
+		}
+		if expectedDeletion.labels.String() != deletedSelectors[index] {
+			return errors.New("ReservedIPs were deleted with selector:" + deletedSelectors[index] + " instead of the expected:" + expectedDeletion.labels.String())
+		}
+	}
+	return nil
 }
 
 func getTestNet(name string, nets []danmtypes.DanmNet) ([]byte, *danmtypes.DanmNet, bool) {

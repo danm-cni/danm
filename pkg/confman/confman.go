@@ -10,6 +10,7 @@ import (
 	danmclientset "github.com/danm-cni/danm/crd/client/clientset/versioned"
 	"github.com/danm-cni/danm/pkg/bitarray"
 	"github.com/danm-cni/danm/pkg/datastructs"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/cpuset"
 )
@@ -25,7 +26,7 @@ func GetTenantConfig(danmClient danmclientset.Interface) (*danmtypes.TenantConfi
 		return nil, err
 	}
 	if reply == nil || len(reply.Items) == 0 {
-		return nil, errors.New("no TenantConfig is configured in the cluster")
+		return nil, apierrors.NewNotFound(danmtypes.SchemeGroupVersion.WithResource("tenantconfigs").GroupResource(), "")
 	}
 	//TODO: do a namespace based selection later if one generic config does not suffice
 	return &reply.Items[0], nil
