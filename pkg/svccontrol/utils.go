@@ -82,10 +82,8 @@ func SelectDesMatchLabels(objs []interface{}, selectorMap map[string]string, svc
 	var deList []*danmv1.DanmEp
 	for _, o := range objs {
 		de := o.(*danmv1.DanmEp)
-		deFit := true
-		if de.GetNamespace() != svcNs {
-			deFit = false
-		} else {
+		var deFit bool
+		if de.GetNamespace() == svcNs {
 			deMap := de.GetLabels()
 			deFit = IsContain(deMap, selectorMap)
 			if deFit && !isDepSelectedBySvc(de, svcNets) {
@@ -127,17 +125,17 @@ func isDepSelectedBySvc(dep *danmv1.DanmEp, netSelectors map[string]string) bool
 		return false
 	}
 	if danmNet, ok := netSelectors[netcontrol.DanmNetKind]; ok {
-		if danmNet == dep.Spec.NetworkName && (netcontrol.DanmNetKind == dep.Spec.ApiType || "" == dep.Spec.ApiType) {
+		if danmNet == dep.Spec.NetworkName && (netcontrol.DanmNetKind == dep.Spec.ApiType || dep.Spec.ApiType == "") {
 			return true
 		}
 	}
 	if tenantNet, ok := netSelectors[netcontrol.TenantNetworkKind]; ok {
-		if tenantNet == dep.Spec.NetworkName && netcontrol.TenantNetworkKind == dep.Spec.ApiType {
+		if tenantNet == dep.Spec.NetworkName && dep.Spec.ApiType == netcontrol.TenantNetworkKind {
 			return true
 		}
 	}
 	if clusterNet, ok := netSelectors[netcontrol.ClusterNetworkKind]; ok {
-		if clusterNet == dep.Spec.NetworkName && netcontrol.ClusterNetworkKind == dep.Spec.ApiType {
+		if clusterNet == dep.Spec.NetworkName && dep.Spec.ApiType == netcontrol.ClusterNetworkKind {
 			return true
 		}
 	}
@@ -182,6 +180,7 @@ func clearPodResourceVersions(addrs []corev1.EndpointAddress) {
 	}
 }
 
+//nolint:staticcheck // Endpoints and EndpointSubset are deprecated but still supported, refactor it at some point though
 func shrinkSubsets(eps *corev1.Endpoints) {
 	if len(eps.Subsets) > 0 &&
 		len(eps.Subsets[0].Addresses) == 0 &&

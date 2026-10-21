@@ -62,6 +62,7 @@ type Controller struct {
 	}
 }
 
+//nolint:staticcheck // Endpoints is deprecated but still supported, refactor it at some point though
 func NewController(
 	stopCh <-chan struct{},
 	kubeclient kubernetes.Interface,
@@ -670,10 +671,7 @@ func (c *Controller) shouldSkip() bool {
 		return true
 	default:
 	}
-	if !c.isLeader.Load() {
-		return true
-	}
-	return false
+	return !c.isLeader.Load()
 }
 
 //nolint:staticcheck // Endpoints is deprecated but still supported, refactor it at some point though

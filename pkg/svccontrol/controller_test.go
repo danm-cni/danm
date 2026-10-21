@@ -284,6 +284,7 @@ func TestSyncPod_UpdatesDanmEpLabels(t *testing.T) {
 	assert.Equal(t, pod.Labels, newDep.Labels)
 }
 
+//nolint:staticcheck // Endpoints and EndpointSubset are deprecated but still supported, refactor it at some point though
 func TestSyncPod_UpdatesEps(t *testing.T) {
 	// create fake kube client and informer factory
 	kubeClient := k8sfake.NewSimpleClientset()
@@ -792,6 +793,7 @@ func TestSyncPod_FromPodCreationTillRemoval(t *testing.T) {
 	// ============================
 	// make Pod to have DeletionTimestamp
 	pod, err = kubeClient.CoreV1().Pods(ns).Get(context.TODO(), podName, metav1.GetOptions{})
+	require.NoErrorf(t, err, "failed to list pods: %v", err)
 	updated = pod.DeepCopy()
 	updated.ObjectMeta.DeletionTimestamp = &metav1.Time{Time: time.Now()}
 	updated.ResourceVersion = "4"
@@ -842,6 +844,7 @@ func TestSyncPod_FromPodCreationTillRemoval(t *testing.T) {
 	// cache is syncing: removed eps from informer as well
 }
 
+//nolint:staticcheck // Endpoints and EndpointSubset are deprecated but still supported, refactor it at some point though
 func TestSubsetsOrder(t *testing.T) {
 	// create fake kube client and informer factory
 	kubeClient := k8sfake.NewSimpleClientset()
