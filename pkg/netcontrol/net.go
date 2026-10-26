@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/apparentlymart/go-cidr/cidr"
@@ -16,43 +17,92 @@ import (
 const (
 	ip4MulticastCidr = "239.0.0.0/8"
 	ip6MulticastCidr = "ff02::0/16"
+	//managedAliasPrefix tags the host interfaces created by NetWatcher, the alias also carries the NetworkID the interface belongs to
+	managedAliasPrefix = "danm-netwatcher:"
 )
 
-func deleteNetworks(dnet *danmtypes.DanmNet) error {
-	if dnet.Spec.Options.Device == "" {
-		return nil
+// hostInterface is a VLAN or VxLAN interface on the host belonging to a NetworkID
+type hostInterface struct {
+	link        netlink.Link
+	vlan        int
+	vxlan       int
+	parentIndex int
+	isTagged    bool
+}
+
+// findHostInterfaces returns the VLAN and VxLAN interfaces of networkID present on the host
+// An interface belongs to networkID if it is tagged with it, or if it is named the way NetWatcher names the interfaces of networkID
+// The latter covers interfaces created by older NetWatcher versions, and the ones whose tagging failed after creation
+// A VLAN interface only matches by name if the name also contains its own VLAN ID, so similarly named interfaces created by others are left alone
+func findHostInterfaces(networkID string, links []netlink.Link) []hostInterface {
+	var hostIfaces []hostInterface
+	for _, link := range links {
+		isTagged := link.Attrs().Alias == managedAliasPrefix+networkID
+		switch typedLink := link.(type) {
+		case *netlink.Vlan:
+			if isTagged || (typedLink.VlanId != 0 && typedLink.Attrs().Name == determineVlanHdev(typedLink.VlanId, networkID, "")) {
+				hostIfaces = append(hostIfaces, hostInterface{link: link, vlan: typedLink.VlanId, parentIndex: typedLink.Attrs().ParentIndex, isTagged: isTagged})
+			}
+		case *netlink.Vxlan:
+			if isTagged || typedLink.Attrs().Name == "vx_"+networkID {
+				hostIfaces = append(hostIfaces, hostInterface{link: link, vxlan: typedLink.VxlanId, parentIndex: typedLink.VtepDevIndex, isTagged: isTagged})
+			}
+		}
 	}
-	var combinedErrorMessage string
-	vxlanId := dnet.Spec.Options.Vxlan
-	netId := dnet.Spec.NetworkID
-	tempErr := deleteHostInterface(vxlanId, "vx_"+netId)
-	if tempErr != nil {
-		combinedErrorMessage = tempErr.Error() + "\n"
+	return hostIfaces
+}
+
+func isHostInterfaceDesired(hostIface hostInterface, networks []*danmtypes.DanmNet, links []netlink.Link) bool {
+	for _, dnet := range networks {
+		options := dnet.Spec.Options
+		if linkIndex(links, options.Device) != hostIface.parentIndex {
+			continue
+		}
+		isVlanDesired := hostIface.vlan != 0 && hostIface.vlan == options.Vlan &&
+			hostIface.link.Attrs().Name == determineVlanHdev(options.Vlan, dnet.Spec.NetworkID, options.Device)
+		isVxlanDesired := hostIface.vxlan != 0 && hostIface.vxlan == options.Vxlan && hostIface.link.Attrs().Name == "vx_"+dnet.Spec.NetworkID
+		if isVlanDesired || isVxlanDesired {
+			return true
+		}
 	}
-	vlanId := dnet.Spec.Options.Vlan
-	tempErr = deleteHostInterface(vlanId, determineVlanHdev(vlanId, netId, dnet.Spec.Options.Device))
-	if tempErr != nil {
-		combinedErrorMessage += tempErr.Error()
+	return false
+}
+
+func taggedNetworkIDs(links []netlink.Link) []string {
+	var networkIDs []string
+	for _, link := range links {
+		networkID, isTagged := strings.CutPrefix(link.Attrs().Alias, managedAliasPrefix)
+		if isTagged && networkID != "" {
+			networkIDs = append(networkIDs, networkID)
+		}
 	}
-	if combinedErrorMessage != "" {
-		return errors.New(combinedErrorMessage)
+	return networkIDs
+}
+
+func tagHostInterface(link netlink.Link, networkID string) error {
+	err := netlink.LinkSetAlias(link, managedAliasPrefix+networkID)
+	if err != nil {
+		return errors.New("tagging host interface:" + link.Attrs().Name + " failed:" + err.Error())
 	}
 	return nil
 }
 
-func deleteHostInterface(ifId int, ifName string) error {
-	if ifId == 0 {
-		return nil
+func linkIndex(links []netlink.Link, name string) int {
+	for _, link := range links {
+		if link.Attrs().Name == name {
+			return link.Attrs().Index
+		}
 	}
-	iface, err := netlink.LinkByName(ifName)
-	if err != nil {
-		return nil
+	return -1
+}
+
+func linkName(links []netlink.Link, index int) string {
+	for _, link := range links {
+		if link.Attrs().Index == index {
+			return link.Attrs().Name
+		}
 	}
-	err = netlink.LinkDel(iface)
-	if err != nil {
-		return errors.New("Deletion of interface:" + ifName + " failed with error:" + err.Error())
-	}
-	return nil
+	return ""
 }
 
 func setupHost(dnet *danmtypes.DanmNet, sourceLearning bool) error {
@@ -89,7 +139,7 @@ func setupVlan(dnet *danmtypes.DanmNet) error {
 		},
 		VlanId: dnet.Spec.Options.Vlan,
 	}
-	err = addLink(vlan)
+	err = addLink(vlan, dnet.Spec.NetworkID)
 	if err != nil {
 		return errors.New("cannot add VLAN interface to host due to:" + err.Error())
 	}
@@ -118,13 +168,19 @@ func shouldInterfaceBeManipulated(dnet *danmtypes.DanmNet, ifName string) (bool,
 	return true, dev, nil
 }
 
-func addLink(link netlink.Link) error {
+func addLink(link netlink.Link, networkID string) error {
 	err := netlink.LinkAdd(link)
 	if err != nil {
 		return err
 	}
+	err = tagHostInterface(link, networkID)
+	if err != nil {
+		netlink.LinkDel(link)
+		return err
+	}
 	err = netlink.LinkSetUp(link)
 	if err != nil {
+		netlink.LinkDel(link)
 		return err
 	}
 	return nil
@@ -187,7 +243,7 @@ func setupVxlan(dnet *danmtypes.DanmNet, sourceLearning bool) error {
 		}
 		vxlan.Group = mcastIP
 	}
-	err = addLink(vxlan)
+	err = addLink(vxlan, dnet.Spec.NetworkID)
 	if err != nil {
 		return errors.New("cannot add VxLAN interface to the host due to:" + err.Error())
 	}
@@ -240,7 +296,6 @@ func shouldWeResizeExistingLink(link netlink.Link, parent netlink.Link, dnet *da
 	if desired == current {
 		return false
 	}
-
 	if err := mtu.ValidateForDev(dnet, parent.Attrs().MTU, parent.Attrs().Name); err != nil {
 		log.Println("INFO: cannot change the MTU of existing host interface for network:" + dnet.Spec.NetworkID + " because:" + err.Error())
 		return false

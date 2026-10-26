@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	danmtypes "github.com/danm-cni/danm/crd/apis/danm/v1"
@@ -19,456 +19,460 @@ import (
 	nadclientset "github.com/danm-cni/danm/crd/client/nad/clientset/versioned"
 	nadinformers "github.com/danm-cni/danm/crd/client/nad/informers/externalversions"
 	"github.com/danm-cni/danm/pkg/datastructs"
+	"github.com/vishvananda/netlink"
 	multustypes "gopkg.in/k8snetworkplumbingwg/multus-cni.v4/pkg/types"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/workqueue"
 )
 
 const (
-	MaxRetryCount      = 5
-	RetryInterval      = 100
-	DanmNetKind        = "DanmNet"
-	TenantNetworkKind  = "TenantNetwork"
-	ClusterNetworkKind = "ClusterNetwork"
-	NadKind            = "NetworkAttachmentDefinition"
+	DanmNetKind             = "DanmNet"
+	TenantNetworkKind       = "TenantNetwork"
+	ClusterNetworkKind      = "ClusterNetwork"
+	NadKind                 = "NetworkAttachmentDefinition"
+	ResyncPeriod            = 1 * time.Minute
+	DiscoveryTimeout        = 1 * time.Minute
+	DiscoveryRequestTimeout = 10 * time.Second
+	DiscoveryRetryInterval  = 5 * time.Second
+	CacheSyncTimeout        = 5 * time.Minute
+	APIRequestTimeout       = 30 * time.Second
+	RetryBaseDelay          = time.Second
+	RetryMaxDelay           = 5 * time.Minute
+	WorkerCount             = 4
+	NetworkIDIndex          = "networkID"
+	//NadParentAnnotation stores the real parent device of a NAD whose master NetWatcher has overwritten with its VLAN/VxLAN host interface
+	NadParentAnnotation = "danm.io/parent-device"
+	//NadPatchedMasterAnnotation stores the master NetWatcher has written into the NAD, to tell it apart from a master set by the user
+	NadPatchedMasterAnnotation = "danm.io/patched-master"
 )
 
 // NetWatcher represents an object watching the K8s API for changes in all three network management API paths
-// Upon the reception of a notification it handles the related VxLAN/VLAN/RT creation/deletions on the host
+// Upon the reception of a notification it queues the NetworkIDs affected, and its workers handle the related VxLAN/VLAN/RT creation/deletions on the host
+// Host interfaces are named after the NetworkID, so a NetworkID is the unit of reconciliation, possibly shared by multiple network objects
 type NetWatcher struct {
-	DanmFactories map[string]danminformers.SharedInformerFactory
-	DanmClients   map[string]danmclientset.Interface
-	NadFactory    nadinformers.SharedInformerFactory
-	NadClient     nadclientset.Interface
-	Controllers   map[string]cache.Controller
-	StopChan      *chan struct{}
-	Config        datastructs.NetwatcherConfig
+	DanmClient  danmclientset.Interface
+	DanmFactory danminformers.SharedInformerFactory
+	NadClient   nadclientset.Interface
+	NadFactory  nadinformers.SharedInformerFactory
+	Informers   map[string]cache.SharedIndexInformer
+	Config      datastructs.NetwatcherConfig
+	queue       workqueue.TypedRateLimitingInterface[string]
+	workers     sync.WaitGroup
 }
 
 // NewWatcher initializes and returns a new NetWatcher object
-// Upon the reception of a notification it performs host network management operations
-// Watcher stores all K8s Clients, Factories, and Informeres of the DANM network management APIs
-func NewWatcher(cfg datastructs.NetwatcherConfig, stopChan *chan struct{}) (*NetWatcher, error) {
-	netWatcher := &NetWatcher{
-		DanmFactories: make(map[string]danminformers.SharedInformerFactory),
-		DanmClients:   make(map[string]danmclientset.Interface),
-		Controllers:   make(map[string]cache.Controller),
-		StopChan:      stopChan,
-		Config:        cfg,
-	}
-	//this is how we test if the specific API is used within the cluster, or not
-	//we can only create an Informer for an existing API, otherwise we get errors
-	dnetClient, err := danmclientset.NewForConfig(cfg.RestConfig)
+// Informers are only created for the network management APIs served by the cluster, as an Informer of a missing API would never sync
+// Discovery is retried until DiscoveryTimeout, because a transient API server failure must not make NetWatcher run without some of its Controllers
+func NewWatcher(ctx context.Context, cfg datastructs.NetwatcherConfig) (*NetWatcher, error) {
+	danmClient, err := danmclientset.NewForConfig(cfg.RestConfig)
 	if err != nil {
 		return nil, err
-	}
-	for i := 0; i < MaxRetryCount; i++ {
-		log.Println("INFO: Trying to discover DanmNet API in the cluster...")
-		_, err = dnetClient.DanmV1().DanmNets("").List(context.TODO(), meta_v1.ListOptions{})
-		if err != nil {
-			log.Println("INFO: DanmNet discovery query failed with error:" + err.Error())
-			time.Sleep(RetryInterval * time.Millisecond)
-		} else {
-			log.Println("INFO: DanmNet API seems to be installed in the cluster, starting DanmNet Controller!")
-			netWatcher.createDnetInformer(dnetClient)
-			break
-		}
-	}
-	//TODO: we should probably share clients between the Informers
-	tnetClient, err := danmclientset.NewForConfig(cfg.RestConfig)
-	if err != nil {
-		return nil, err
-	}
-	cnetClient, err := danmclientset.NewForConfig(cfg.RestConfig)
-	if err != nil {
-		return nil, err
-	}
-	//Production APIs work in tandem, Netwatcher shall not start-up if only one or the other would be served
-	for i := 0; i < MaxRetryCount; i++ {
-		log.Println("INFO: Trying to discover Production APIs in the cluster...")
-		_, tnetDiscoveryErr := tnetClient.DanmV1().TenantNetworks("").List(context.TODO(), meta_v1.ListOptions{})
-		_, cnetDiscoveryErr := cnetClient.DanmV1().ClusterNetworks().List(context.TODO(), meta_v1.ListOptions{})
-		if tnetDiscoveryErr != nil {
-			log.Println("INFO: TenantNetwork discovery query failed with error:" + tnetDiscoveryErr.Error())
-		} else if cnetDiscoveryErr != nil {
-			log.Println("INFO: ClusterNetwork discovery query failed with error:" + cnetDiscoveryErr.Error())
-		} else {
-			log.Println("INFO: Production APIs seem to be installed in the cluster, starting both Tenant and ClusterNetwork Controllers!")
-			netWatcher.createTnetInformer(tnetClient)
-			netWatcher.createCnetInformer(cnetClient)
-			break
-		}
-		time.Sleep(RetryInterval * time.Millisecond)
 	}
 	nadClient, err := nadclientset.NewForConfig(cfg.RestConfig)
 	if err != nil {
 		return nil, err
 	}
-	for i := 0; i < MaxRetryCount; i++ {
-		log.Println("INFO: Trying to discover NetworkAttachmentDefinition API in the cluster...")
-		_, err = nadClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions("").List(context.TODO(), meta_v1.ListOptions{})
+	discoveryConfig := rest.CopyConfig(cfg.RestConfig)
+	discoveryConfig.Timeout = DiscoveryRequestTimeout
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(discoveryConfig)
+	if err != nil {
+		return nil, err
+	}
+	netWatcher := &NetWatcher{
+		DanmClient:  danmClient,
+		DanmFactory: danminformers.NewSharedInformerFactory(danmClient, ResyncPeriod),
+		NadClient:   nadClient,
+		NadFactory:  nadinformers.NewSharedInformerFactory(nadClient, ResyncPeriod),
+		Informers:   make(map[string]cache.SharedIndexInformer),
+		Config:      cfg,
+		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
+			workqueue.NewTypedItemExponentialFailureRateLimiter[string](RetryBaseDelay, RetryMaxDelay),
+			workqueue.TypedRateLimitingQueueConfig[string]{Name: "netwatcher"}),
+	}
+	danmResources, err := discoverResources(ctx, discoveryClient, danmtypes.SchemeGroupVersion.String())
+	if err != nil {
+		return nil, err
+	}
+	nadResources, err := discoverResources(ctx, discoveryClient, nadtypes.SchemeGroupVersion.String())
+	if err != nil {
+		return nil, err
+	}
+	if danmResources["danmnets"] {
+		err = netWatcher.registerInformer(DanmNetKind, netWatcher.DanmFactory.Danm().V1().DanmNets().Informer())
 		if err != nil {
-			log.Println("INFO: NetworkAttachmentDefinition discovery query failed with error:" + err.Error())
-			time.Sleep(RetryInterval * time.Millisecond)
-		} else {
-			log.Println("INFO: NetworkAttachmentDefinition API seems to be installed in the cluster, starting NAD Controller!")
-			netWatcher.createNadInformer(nadClient)
-			break
+			return nil, err
 		}
 	}
-	if len(netWatcher.Controllers) == 0 {
+	//Production APIs work in tandem, Netwatcher shall not start their Controllers if only one or the other would be served
+	if danmResources["tenantnetworks"] && danmResources["clusternetworks"] {
+		err = netWatcher.registerInformer(TenantNetworkKind, netWatcher.DanmFactory.Danm().V1().TenantNetworks().Informer())
+		if err != nil {
+			return nil, err
+		}
+		err = netWatcher.registerInformer(ClusterNetworkKind, netWatcher.DanmFactory.Danm().V1().ClusterNetworks().Informer())
+		if err != nil {
+			return nil, err
+		}
+	} else if danmResources["tenantnetworks"] || danmResources["clusternetworks"] {
+		return nil, errors.New("only one of the TenantNetwork and ClusterNetwork APIs is currently served by the cluster, please install the missing CRD!")
+	}
+	if nadResources["network-attachment-definitions"] {
+		err = netWatcher.registerInformer(NadKind, netWatcher.NadFactory.K8sCniCncfIo().V1().NetworkAttachmentDefinitions().Informer())
+		if err != nil {
+			return nil, err
+		}
+	}
+	if len(netWatcher.Informers) == 0 {
 		return nil, errors.New("no network management APIs are installed in the cluster, netwatcher cannot start!")
 	}
-	log.Println("Number of watchers started for recognized APIs:" + strconv.Itoa(len(netWatcher.Controllers)))
+	log.Println("Number of watchers started for recognized APIs:" + strconv.Itoa(len(netWatcher.Informers)))
 	return netWatcher, nil
 }
 
-func (netWatcher *NetWatcher) Run(stopCh *chan struct{}) {
-	for _, controller := range netWatcher.Controllers {
-		go controller.Run(*stopCh)
-	}
-}
-
-func (netWatcher *NetWatcher) WatchErrorHandler(r *cache.Reflector, err error) {
-	if apierrors.IsResourceExpired(err) || apierrors.IsGone(err) || err == io.EOF {
-		log.Println("INFO: One of the API watchers closed gracefully, re-establishing connection")
-		return
-	}
-	//The default K8s client retry mechanism expires after a certain amount of time, and just gives-up
-	//It is better to shutdown the whole process now and freshly re-build the watchers, rather than risking becoming a permanent zombie
-	*netWatcher.StopChan <- struct{}{}
-	//Give some time for gracefully terminating the connections
-	time.Sleep(5 * time.Second)
-	log.Println("ERROR: One of the API watchers closed unexpectedly with error:" + err.Error() + " shutting down NetWatcher!")
-	os.Exit(0)
-}
-
-func (netWatcher *NetWatcher) createDnetInformer(dnetClient danmclientset.Interface) {
-	netWatcher.DanmClients[DanmNetKind] = dnetClient
-	dnetInformerFactory := danminformers.NewSharedInformerFactory(dnetClient, time.Minute*10)
-	netWatcher.DanmFactories[DanmNetKind] = dnetInformerFactory
-	dnetController := dnetInformerFactory.Danm().V1().DanmNets().Informer()
-	dnetController.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    netWatcher.AddDanmNet,
-		UpdateFunc: netWatcher.UpdateDanmNet,
-		DeleteFunc: DeleteDanmNet,
+func discoverResources(ctx context.Context, discoveryClient discovery.DiscoveryInterface, groupVersion string) (map[string]bool, error) {
+	resources := make(map[string]bool)
+	var lastErr error
+	err := wait.PollUntilContextTimeout(ctx, DiscoveryRetryInterval, DiscoveryTimeout, true, func(ctx context.Context) (bool, error) {
+		log.Println("INFO: Trying to discover " + groupVersion + " APIs in the cluster...")
+		resourceList, err := discoveryClient.ServerResourcesForGroupVersion(groupVersion)
+		if apierrors.IsNotFound(err) {
+			log.Println("INFO: " + groupVersion + " APIs are not installed in the cluster")
+			return true, nil
+		}
+		if err != nil {
+			lastErr = err
+			log.Println("INFO: Discovery of " + groupVersion + " APIs failed with error:" + err.Error())
+			return false, nil
+		}
+		for _, resource := range resourceList.APIResources {
+			resources[resource.Name] = true
+		}
+		return true, nil
 	})
-	dnetController.SetWatchErrorHandler(netWatcher.WatchErrorHandler)
-	netWatcher.Controllers[DanmNetKind] = dnetController
+	if err != nil {
+		return nil, fmt.Errorf("discovery of %s APIs did not succeed within %s: %w", groupVersion, DiscoveryTimeout, errors.Join(err, lastErr))
+	}
+	return resources, nil
 }
 
-func (netWatcher *NetWatcher) createTnetInformer(tnetClient danmclientset.Interface) {
-	netWatcher.DanmClients[TenantNetworkKind] = tnetClient
-	tnetInformerFactory := danminformers.NewSharedInformerFactory(tnetClient, time.Minute*10)
-	netWatcher.DanmFactories[TenantNetworkKind] = tnetInformerFactory
-	tnetController := tnetInformerFactory.Danm().V1().TenantNetworks().Informer()
-	tnetController.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    netWatcher.AddTenantNetwork,
-		UpdateFunc: netWatcher.UpdateTenantNetwork,
-		DeleteFunc: DeleteTenantNetwork,
+// registerInformer makes the Informer queue the NetworkIDs affected by its events, and index its objects by NetworkID
+// An update queues the old NetworkID too, so its interfaces are removed when the NetworkID of a network changes
+// An update to an invalid network is ignored altogether, so a typo in a NAD does not tear down the interfaces of its previous, valid version
+func (netWatcher *NetWatcher) registerInformer(kind string, informer cache.SharedIndexInformer) error {
+	err := informer.AddIndexers(cache.Indexers{NetworkIDIndex: networkIDIndexFunc})
+	if err != nil {
+		return errors.New("could not register NetworkID indexer of " + kind + " Controller:" + err.Error())
+	}
+	_, err = informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) { netWatcher.enqueue(kind, obj) },
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			if netWatcher.enqueue(kind, newObj) {
+				netWatcher.enqueue(kind, oldObj)
+			}
+		},
+		DeleteFunc: func(obj interface{}) { netWatcher.enqueue(kind, obj) },
 	})
-	tnetController.SetWatchErrorHandler(netWatcher.WatchErrorHandler)
-	netWatcher.Controllers[TenantNetworkKind] = tnetController
+	if err != nil {
+		return errors.New("could not register event handler of " + kind + " Controller:" + err.Error())
+	}
+	err = informer.SetWatchErrorHandlerWithContext(WatchErrorHandler)
+	if err != nil {
+		return errors.New("could not register watch error handler of " + kind + " Controller:" + err.Error())
+	}
+	log.Println("INFO: " + kind + " API is served by the cluster, starting " + kind + " Controller!")
+	netWatcher.Informers[kind] = informer
+	return nil
 }
 
-func (netWatcher *NetWatcher) createCnetInformer(cnetClient danmclientset.Interface) {
-	netWatcher.DanmClients[ClusterNetworkKind] = cnetClient
-	cnetInformerFactory := danminformers.NewSharedInformerFactory(cnetClient, time.Minute*10)
-	netWatcher.DanmFactories[ClusterNetworkKind] = cnetInformerFactory
-	cnetController := cnetInformerFactory.Danm().V1().ClusterNetworks().Informer()
-	cnetController.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    netWatcher.AddClusterNetwork,
-		UpdateFunc: netWatcher.UpdateClusterNetwork,
-		DeleteFunc: DeleteClusterNetwork,
+// Run starts all Informers, and once their caches are synced it starts the workers processing the queued networks,
+// and the periodic garbage collection of the host interfaces tagged by NetWatcher
+// An Informer not syncing within CacheSyncTimeout (e.g. due to missing RBAC permissions) is reported as an error, as it would never deliver any events
+// The Informers and the workers keep running until ctx is cancelled
+func (netWatcher *NetWatcher) Run(ctx context.Context) error {
+	netWatcher.DanmFactory.StartWithContext(ctx)
+	netWatcher.NadFactory.StartWithContext(ctx)
+	syncCtx, cancel := context.WithTimeoutCause(ctx, CacheSyncTimeout, errors.New("Informer caches did not sync within "+CacheSyncTimeout.String()))
+	defer cancel()
+	err := netWatcher.DanmFactory.WaitForCacheSyncWithContext(syncCtx).AsError()
+	if err != nil {
+		return err
+	}
+	err = netWatcher.NadFactory.WaitForCacheSyncWithContext(syncCtx).AsError()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < WorkerCount; i++ {
+		netWatcher.workers.Go(func() {
+			wait.UntilWithContext(ctx, netWatcher.runWorker, time.Second)
+		})
+	}
+	netWatcher.workers.Go(func() {
+		wait.UntilWithContext(ctx, netWatcher.enqueueTaggedNetworks, ResyncPeriod)
 	})
-	cnetController.SetWatchErrorHandler(netWatcher.WatchErrorHandler)
-	netWatcher.Controllers[ClusterNetworkKind] = cnetController
+	go func() {
+		<-ctx.Done()
+		netWatcher.queue.ShutDown()
+	}()
+	return nil
 }
 
-func (netWatcher *NetWatcher) createNadInformer(nadClient nadclientset.Interface) {
-	netWatcher.NadClient = nadClient
-	nadInformerFactory := nadinformers.NewSharedInformerFactory(nadClient, time.Minute*10)
-	netWatcher.NadFactory = nadInformerFactory
-	nadController := nadInformerFactory.K8sCniCncfIo().V1().NetworkAttachmentDefinitions().Informer()
-	nadController.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    netWatcher.AddNad,
-		UpdateFunc: netWatcher.UpdateNad,
-		DeleteFunc: DeleteNad,
-	})
-	nadController.SetWatchErrorHandler(netWatcher.WatchErrorHandler)
-	netWatcher.Controllers[NadKind] = nadController
+// Shutdown waits until all workers and Informers are stopped, the ctx passed to Run needs to be cancelled first
+// Waiting is bounded by shutdownCtx, as a worker can be stuck in a netlink call which cannot be interrupted
+func (netWatcher *NetWatcher) Shutdown(shutdownCtx context.Context) error {
+	netWatcher.queue.ShutDown()
+	stopped := make(chan struct{})
+	go func() {
+		netWatcher.workers.Wait()
+		netWatcher.DanmFactory.Shutdown()
+		netWatcher.NadFactory.Shutdown()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+		return nil
+	case <-shutdownCtx.Done():
+		return context.Cause(shutdownCtx)
+	}
 }
 
-func (netWatcher *NetWatcher) AddDanmNet(obj interface{}) {
-	dn, isNetwork := obj.(*danmtypes.DanmNet)
-	if !isNetwork {
-		log.Println("ERROR: Can't create interfaces for DanmNet, 'cause we have received an invalid object from the K8s API server")
+// WatchErrorHandler only logs the error, as the Reflector itself keeps retrying List and Watch with backoff for as long as its Informer runs
+// Expired resource versions and closed connections are part of normal watch operations, so they are not logged
+func WatchErrorHandler(_ context.Context, r *cache.Reflector, err error) {
+	if apierrors.IsResourceExpired(err) || apierrors.IsGone(err) || errors.Is(err, io.EOF) {
 		return
 	}
-	err := setupHost(dn, netWatcher.Config.SourceLearning)
+	log.Println("WARNING: " + r.TypeDescription() + " watcher failed with error:" + err.Error() + ", re-establishing connection")
+}
+
+func (netWatcher *NetWatcher) enqueue(kind string, obj interface{}) bool {
+	if tombStone, isTombStone := obj.(cache.DeletedFinalStateUnknown); isTombStone {
+		obj = tombStone.Obj
+	}
+	dnet, err := toDanmNet(obj)
 	if err != nil {
-		log.Println("INFO: Creating host interfaces for DanmNet:" + dn.ObjectMeta.Name + " failed with error:" + err.Error())
+		key, _ := cache.MetaNamespaceKeyFunc(obj)
+		log.Println("ERROR: Can't manage host interfaces for " + kind + ":" + key + " because:" + err.Error())
+		return false
+	}
+	if dnet.Spec.NetworkID != "" {
+		netWatcher.queue.Add(dnet.Spec.NetworkID)
+	}
+	return true
+}
+
+// enqueueTaggedNetworks queues the NetworkIDs of all host interfaces tagged by NetWatcher
+// This is how interfaces of networks deleted while NetWatcher was not running get cleaned up, as no event refers to their NetworkID anymore
+// It must only run once the Informer caches are synced, otherwise the interfaces of all networks would look unnecessary
+func (netWatcher *NetWatcher) enqueueTaggedNetworks(_ context.Context) {
+	links, err := netlink.LinkList()
+	if err != nil {
+		log.Println("WARNING: Listing host interfaces for garbage collection failed with error:" + err.Error())
+		return
+	}
+	for _, networkID := range taggedNetworkIDs(links) {
+		netWatcher.queue.Add(networkID)
 	}
 }
 
-func (netWatcher *NetWatcher) UpdateDanmNet(oldObj, newObj interface{}) {
-	oldDn, isNetwork := oldObj.(*danmtypes.DanmNet)
-	if !isNetwork {
-		log.Println("ERROR: Can't update interfaces for DanmNet change, 'cause we have received an invalid old object from the K8s API server")
-		return
+func networkIDIndexFunc(obj interface{}) ([]string, error) {
+	dnet, err := toDanmNet(obj)
+	if err != nil || dnet.Spec.NetworkID == "" {
+		return nil, nil
 	}
-	newdDn, isNetwork := newObj.(*danmtypes.DanmNet)
-	if !isNetwork {
-		log.Println("ERROR: Can't update interfaces for DanmNet change, 'cause we have received an invalid new object from the K8s API server")
-		return
+	return []string{dnet.Spec.NetworkID}, nil
+}
+
+func (netWatcher *NetWatcher) runWorker(ctx context.Context) {
+	for netWatcher.processNextWorkItem(ctx) {
 	}
-	if isIfaceCleanupNeeded(oldDn, newdDn) {
-		err := deleteNetworks(oldDn)
+}
+
+func (netWatcher *NetWatcher) processNextWorkItem(ctx context.Context) bool {
+	networkID, shutdown := netWatcher.queue.Get()
+	if shutdown {
+		return false
+	}
+	defer netWatcher.queue.Done(networkID)
+	err := netWatcher.reconcile(ctx, networkID)
+	if err == nil {
+		netWatcher.queue.Forget(networkID)
+		return true
+	}
+	log.Println("INFO: Managing host interfaces for NetworkID:" + networkID + " failed with error:" + err.Error() + " , retrying")
+	netWatcher.queue.AddRateLimited(networkID)
+	return true
+}
+
+// reconcile brings the host interfaces of a NetworkID in line with all network objects using it in the Informer caches
+// The interfaces present on the host are the reference: any interface of the NetworkID not required by a network is deleted,
+// regardless of whether it belongs to a deleted network, to a previous version of a network, or was left behind while NetWatcher was not running
+func (netWatcher *NetWatcher) reconcile(ctx context.Context, networkID string) error {
+	networks, err := netWatcher.networksWithID(networkID)
+	if err != nil {
+		return err
+	}
+	links, err := netlink.LinkList()
+	if err != nil {
+		return errors.New("cannot cleanup dangling interfaces because listing host interfaces failed:" + err.Error())
+	}
+	hostIfaces := findHostInterfaces(networkID, links)
+	for _, dnet := range networks {
+		if dnet.TypeMeta.Kind == NadKind {
+			resolveNadParentDevice(dnet, hostIfaces, links)
+		}
+	}
+	errs := cleanupDanglingIfaces(networkID, networks, hostIfaces, links)
+	for _, dnet := range networks {
+		err = setupHost(dnet, netWatcher.Config.SourceLearning)
 		if err != nil {
-			log.Println("INFO: Deletion of old host interfaces for DanmNet:" + oldDn.ObjectMeta.Name + " after update failed with error:" + err.Error())
+			errs = append(errs, errors.New("creating host interfaces for "+dnet.TypeMeta.Kind+":"+dnet.ObjectMeta.Name+" failed:"+err.Error()))
+			continue
+		}
+		if dnet.TypeMeta.Kind == NadKind {
+			err = netWatcher.patchNadParentDevice(ctx, dnet)
+			if err != nil {
+				errs = append(errs, err)
+			}
 		}
 	}
-	err := setupHost(newdDn, netWatcher.Config.SourceLearning)
-	if err != nil {
-		log.Println("INFO: Creating host interfaces for new DanmNet:" + newdDn.ObjectMeta.Name + " after update failed with error:" + err.Error())
-	}
+	return errors.Join(errs...)
 }
 
-func DeleteDanmNet(obj interface{}) {
-	dn, isNetwork := obj.(*danmtypes.DanmNet)
-	if !isNetwork {
-		tombStone, objIsTombstone := obj.(cache.DeletedFinalStateUnknown)
-		if !objIsTombstone {
-			log.Println("ERROR: Can't delete interfaces for DanmNet, 'cause we have received an invalid object from the K8s API server")
-			return
-		}
-		var isObjectInTombStoneNetwork bool
-		dn, isObjectInTombStoneNetwork = tombStone.Obj.(*danmtypes.DanmNet)
-		if !isObjectInTombStoneNetwork {
-			log.Println("ERROR: Can't delete interfaces for DanmNet, 'cause we have received an invalid object from the K8s API server in the Event tombstone")
-			return
-		}
-	}
-	err := deleteNetworks(dn)
-	if err != nil {
-		log.Println("INFO: Deletion of host interfaces for DanmNet:" + dn.ObjectMeta.Name + " failed with error:" + err.Error())
-	}
-}
-
-func (netWatcher *NetWatcher) AddTenantNetwork(obj interface{}) {
-	tn, isNetwork := obj.(*danmtypes.TenantNetwork)
-	if !isNetwork {
-		log.Println("ERROR: Can't create interfaces for TenantNetwork, 'cause we have received an invalid object from the K8s API server")
-		return
-	}
-	dnet := ConvertTnetToDnet(tn)
-	err := setupHost(dnet, netWatcher.Config.SourceLearning)
-	if err != nil {
-		log.Println("INFO: Creating host interfaces for TenantNetwork:" + dnet.ObjectMeta.Name + " failed with error:" + err.Error())
-	}
-}
-
-func (netWatcher *NetWatcher) UpdateTenantNetwork(oldObj, newObj interface{}) {
-	oldTn, isNetwork := oldObj.(*danmtypes.TenantNetwork)
-	if !isNetwork {
-		log.Println("ERROR: Can't update interfaces for TenantNetwork change, 'cause we have received an invalid old object from the K8s API server")
-		return
-	}
-	newTn, isNetwork := newObj.(*danmtypes.TenantNetwork)
-	if !isNetwork {
-		log.Println("ERROR: Can't update interfaces for TenantNetwork change, 'cause we have received an invalid new object from the K8s API server")
-		return
-	}
-	oldDn := ConvertTnetToDnet(oldTn)
-	newdDn := ConvertTnetToDnet(newTn)
-	if isIfaceCleanupNeeded(oldDn, newdDn) {
-		err := deleteNetworks(oldDn)
+func cleanupDanglingIfaces(networkID string, networks []*danmtypes.DanmNet, hostIfaces []hostInterface, links []netlink.Link) []error {
+	var errs []error
+	toTag, toDelete := planHostInterfaces(networks, hostIfaces, links)
+	for _, hostIface := range toTag {
+		err := tagHostInterface(hostIface.link, networkID)
 		if err != nil {
-			log.Println("INFO: Deletion of old host interfaces for TenantNetwork:" + oldDn.ObjectMeta.Name + " after update failed with error:" + err.Error())
+			errs = append(errs, err)
 		}
 	}
-	err := setupHost(newdDn, netWatcher.Config.SourceLearning)
-	if err != nil {
-		log.Println("INFO: Creating host interfaces for new TenantNetwork:" + newdDn.ObjectMeta.Name + " after update failed with error:" + err.Error())
-	}
-}
-
-func DeleteTenantNetwork(obj interface{}) {
-	tn, isNetwork := obj.(*danmtypes.TenantNetwork)
-	if !isNetwork {
-		tombStone, objIsTombstone := obj.(cache.DeletedFinalStateUnknown)
-		if !objIsTombstone {
-			log.Println("ERROR: Can't delete interfaces for TenantNetwork, 'cause we have received an invalid object from the K8s API server")
-			return
-		}
-		var isObjectInTombStoneNetwork bool
-		tn, isObjectInTombStoneNetwork = tombStone.Obj.(*danmtypes.TenantNetwork)
-		if !isObjectInTombStoneNetwork {
-			log.Println("ERROR: Can't delete interfaces for TenantNetwork, 'cause we have received an invalid object from the K8s API server in the Event tombstone")
-			return
-		}
-	}
-	dn := ConvertTnetToDnet(tn)
-	err := deleteNetworks(dn)
-	if err != nil {
-		log.Println("INFO: Deletion of host interfaces for TenantNetwork:" + dn.ObjectMeta.Name + " failed with error:" + err.Error())
-	}
-}
-
-func (netWatcher *NetWatcher) AddClusterNetwork(obj interface{}) {
-	cn, isNetwork := obj.(*danmtypes.ClusterNetwork)
-	if !isNetwork {
-		log.Println("ERROR: Can't create interfaces for ClusterNetwork, 'cause we have received an invalid object from the K8s API server")
-		return
-	}
-	dnet := ConvertCnetToDnet(cn)
-	err := setupHost(dnet, netWatcher.Config.SourceLearning)
-	if err != nil {
-		log.Println("INFO: Creating host interfaces for ClusterNetwork:" + dnet.ObjectMeta.Name + " failed with error:" + err.Error())
-	}
-}
-
-func (netWatcher *NetWatcher) UpdateClusterNetwork(oldObj, newObj interface{}) {
-	oldCn, isNetwork := oldObj.(*danmtypes.ClusterNetwork)
-	if !isNetwork {
-		log.Println("ERROR: Can't update interfaces for ClusterNetwork change, 'cause we have received an invalid old object from the K8s API server")
-		return
-	}
-	newCn, isNetwork := newObj.(*danmtypes.ClusterNetwork)
-	if !isNetwork {
-		log.Println("ERROR: Can't update interfaces for ClusterNetwork change, 'cause we have received an invalid new object from the K8s API server")
-		return
-	}
-	oldDn := ConvertCnetToDnet(oldCn)
-	newdDn := ConvertCnetToDnet(newCn)
-	if isIfaceCleanupNeeded(oldDn, newdDn) {
-		err := deleteNetworks(oldDn)
+	for _, hostIface := range toDelete {
+		log.Println("INFO: Deleting tagged host interface:" + hostIface.link.Attrs().Name + " as none of the networks require it")
+		err := netlink.LinkDel(hostIface.link)
 		if err != nil {
-			log.Println("INFO: Deletion of old host interfaces for ClusterNetwork:" + oldDn.ObjectMeta.Name + " after update failed with error:" + err.Error())
+			errs = append(errs, errors.New("deletion of host interface:"+hostIface.link.Attrs().Name+" failed:"+err.Error()))
 		}
 	}
-	err := setupHost(newdDn, netWatcher.Config.SourceLearning)
-	if err != nil {
-		log.Println("INFO: Creating host interfaces for new ClusterNetwork:" + newdDn.ObjectMeta.Name + " after update failed with error:" + err.Error())
-	}
+	return errs
 }
 
-func DeleteClusterNetwork(obj interface{}) {
-	cn, isNetwork := obj.(*danmtypes.ClusterNetwork)
-	if !isNetwork {
-		tombStone, objIsTombstone := obj.(cache.DeletedFinalStateUnknown)
-		if !objIsTombstone {
-			log.Println("ERROR: Can't delete interfaces for ClusterNetwork, 'cause we have received an invalid object from the K8s API server")
-			return
-		}
-		var isObjectInTombStoneNetwork bool
-		cn, isObjectInTombStoneNetwork = tombStone.Obj.(*danmtypes.ClusterNetwork)
-		if !isObjectInTombStoneNetwork {
-			log.Println("ERROR: Can't delete interfaces for ClusterNetwork, 'cause we have received an invalid object from the K8s API server in the Event tombstone")
-			return
+// planHostInterfaces returns the untagged interfaces required by a network, which need to be tagged,
+// and the tagged interfaces not required by any network, which need to be deleted
+// Untagged interfaces not required by any network are left alone, as they might have been created by someone else
+func planHostInterfaces(networks []*danmtypes.DanmNet, hostIfaces []hostInterface, links []netlink.Link) ([]hostInterface, []hostInterface) {
+	var toTag, toDelete []hostInterface
+	for _, hostIface := range hostIfaces {
+		isDesired := isHostInterfaceDesired(hostIface, networks, links)
+		if isDesired && !hostIface.isTagged {
+			toTag = append(toTag, hostIface)
+		} else if !isDesired && hostIface.isTagged {
+			toDelete = append(toDelete, hostIface)
 		}
 	}
-	dn := ConvertCnetToDnet(cn)
-	err := deleteNetworks(dn)
-	if err != nil {
-		log.Println("INFO: Deletion of host interfaces for ClusterNetwork:" + dn.ObjectMeta.Name + " failed with error:" + err.Error())
-	}
+	return toTag, toDelete
 }
 
-func (netWatcher *NetWatcher) AddNad(obj interface{}) {
-	nad, isNetwork := obj.(*nadtypes.NetworkAttachmentDefinition)
-	if !isNetwork {
-		log.Println("ERROR: Can't create interfaces for NetworkAttachmentDefinition, 'cause we have received an invalid object from the K8s API server")
-		return
-	}
-	dnet, err := convertNadToDnet(nad)
-	if err != nil {
-		log.Println("INFO: Creating host interfaces for NetworkAttachmentDefinition:" + nad.ObjectMeta.Name + " failed with error:" + err.Error())
-		return
-	}
-	err = setupHost(dnet, netWatcher.Config.SourceLearning)
-	if err != nil {
-		log.Println("INFO: Creating host interfaces for NetworkAttachmentDefinition:" + nad.ObjectMeta.Name + " failed with error:" + err.Error())
-		return
-	}
-	//Upstream IPVLAN/MACVLAN plugins are dumb animals, so we need to modify parent device in their NAD to the exact VLAN/VxLAN host interface
-	//TODO: on one hand this would make much more sense to be done in an admission controller, on the other one it makes sense for netwatcher to be self-containing
-	//      Let's see if this causes issues in production. A random initial Pod restart here and there when the network and a Pod using it are created the same time we can live with IMO
-	if dnet.Spec.Options.Vlan != 0 || dnet.Spec.Options.Vxlan != 0 {
-		nad.Spec.Config = string(PatchCniConf([]byte(nad.Spec.Config), "master", DetermineHostDeviceName(dnet)))
-		_, err = netWatcher.NadClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(nad.ObjectMeta.Namespace).Update(context.TODO(), nad, meta_v1.UpdateOptions{})
+func (netWatcher *NetWatcher) networksWithID(networkID string) ([]*danmtypes.DanmNet, error) {
+	var networks []*danmtypes.DanmNet
+	for _, informer := range netWatcher.Informers {
+		objs, err := informer.GetIndexer().ByIndex(NetworkIDIndex, networkID)
 		if err != nil {
-			log.Println("INFO: Could not update NetworkAttachmentDefinition:" + nad.ObjectMeta.Name + " with the new parent interface name because:" + err.Error())
+			return nil, err
+		}
+		for _, obj := range objs {
+			dnet, err := toDanmNet(obj)
+			if err != nil {
+				return nil, err
+			}
+			networks = append(networks, dnet)
+		}
+	}
+	return networks, nil
+}
+
+func toDanmNet(obj interface{}) (*danmtypes.DanmNet, error) {
+	switch network := obj.(type) {
+	case *danmtypes.DanmNet:
+		dnet := *network
+		dnet.TypeMeta.Kind = DanmNetKind
+		return &dnet, nil
+	case *danmtypes.TenantNetwork:
+		return ConvertTnetToDnet(network), nil
+	case *danmtypes.ClusterNetwork:
+		return ConvertCnetToDnet(network), nil
+	case *nadtypes.NetworkAttachmentDefinition:
+		return convertNadToDnet(network)
+	}
+	return nil, fmt.Errorf("unexpected object type %T", obj)
+}
+
+func resolveNadParentDevice(dnet *danmtypes.DanmNet, hostIfaces []hostInterface, links []netlink.Link) {
+	parent, isParentStored := dnet.ObjectMeta.Annotations[NadParentAnnotation]
+	if isParentStored && dnet.Spec.Options.Device == dnet.ObjectMeta.Annotations[NadPatchedMasterAnnotation] {
+		dnet.Spec.Options.Device = parent
+		return
+	}
+	for _, hostIface := range hostIfaces {
+		if hostIface.link.Attrs().Name == dnet.Spec.Options.Device {
+			if parent = linkName(links, hostIface.parentIndex); parent != "" {
+				dnet.Spec.Options.Device = parent
+			}
+			return
 		}
 	}
 }
 
-func (netWatcher *NetWatcher) UpdateNad(oldObj, newObj interface{}) {
-	oldNad, isNetwork := oldObj.(*nadtypes.NetworkAttachmentDefinition)
-	if !isNetwork {
-		log.Println("ERROR: Can't update interfaces for NetworkAttachmentDefinition change, 'cause we have received an invalid old object from the K8s API server")
-		return
+func (netWatcher *NetWatcher) patchNadParentDevice(ctx context.Context, dnet *danmtypes.DanmNet) error {
+	obj, exists, err := netWatcher.Informers[NadKind].GetIndexer().GetByKey(dnet.ObjectMeta.Namespace + "/" + dnet.ObjectMeta.Name)
+	if err != nil || !exists {
+		return err
 	}
-	newNad, isNetwork := newObj.(*nadtypes.NetworkAttachmentDefinition)
-	if !isNetwork {
-		log.Println("ERROR: Can't update interfaces for NetworkAttachmentDefinition change, 'cause we have received an invalid new object from the K8s API server")
-		return
-	}
-	oldDn, err := convertNadToDnet(oldNad)
+	nad := obj.(*nadtypes.NetworkAttachmentDefinition)
+	var netConf datastructs.NetConf
+	err = json.Unmarshal([]byte(nad.Spec.Config), &netConf)
 	if err != nil {
-		log.Println("INFO: Modifying host interfaces for NetworkAttachmentDefinition:" + oldNad.ObjectMeta.Name + " failed with error:" + err.Error())
-		return
+		return errors.New("could not parse CNI config of NetworkAttachmentDefinition:" + err.Error())
 	}
-	newdDn, err := convertNadToDnet(newNad)
-	if err != nil {
-		log.Println("INFO: Modifying host interfaces for NetworkAttachmentDefinition:" + newNad.ObjectMeta.Name + " failed with error:" + err.Error())
-		return
+	hostDevice := DetermineHostDeviceName(dnet)
+	//CNI plugin conf isn't compatible with Netwatcher's assumptions
+	if dnet.Spec.Options.Device == "" {
+		return nil
 	}
-	parentUpdateNeeded := (DetermineHostDeviceName(oldDn) != DetermineHostDeviceName(newdDn))
-	if isIfaceCleanupNeeded(oldDn, newdDn) {
-		err = deleteNetworks(oldDn)
-		if err != nil {
-			log.Println("INFO: Deletion of old host interfaces for NetworkAttachmentDefinition:" + oldNad.ObjectMeta.Name + " after update failed with error:" + err.Error())
+	isParentPatched := hostDevice != dnet.Spec.Options.Device
+	parent, isParentStored := nad.ObjectMeta.Annotations[NadParentAnnotation]
+	patchedMaster, isPatchedMasterStored := nad.ObjectMeta.Annotations[NadPatchedMasterAnnotation]
+	areAnnotationsUpToDate := !isParentStored && !isPatchedMasterStored
+	if isParentPatched {
+		areAnnotationsUpToDate = isParentStored && parent == dnet.Spec.Options.Device && isPatchedMasterStored && patchedMaster == hostDevice
+	}
+	if netConf.Master == hostDevice && areAnnotationsUpToDate {
+		return nil
+	}
+	patchedNad := nad.DeepCopy()
+	patchedNad.Spec.Config = string(PatchCniConf([]byte(nad.Spec.Config), "master", hostDevice))
+	if isParentPatched {
+		if patchedNad.ObjectMeta.Annotations == nil {
+			patchedNad.ObjectMeta.Annotations = make(map[string]string)
 		}
+		patchedNad.ObjectMeta.Annotations[NadParentAnnotation] = dnet.Spec.Options.Device
+		patchedNad.ObjectMeta.Annotations[NadPatchedMasterAnnotation] = hostDevice
+	} else {
+		delete(patchedNad.ObjectMeta.Annotations, NadParentAnnotation)
+		delete(patchedNad.ObjectMeta.Annotations, NadPatchedMasterAnnotation)
 	}
-	err = setupHost(newdDn, netWatcher.Config.SourceLearning)
+	reqCtx, cancel := context.WithTimeout(ctx, APIRequestTimeout)
+	defer cancel()
+	_, err = netWatcher.NadClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(nad.ObjectMeta.Namespace).Update(reqCtx, patchedNad, meta_v1.UpdateOptions{})
 	if err != nil {
-		log.Println("INFO: Creating host interfaces for modified NetworkAttachmentDefinition:" + newNad.ObjectMeta.Name + " after update failed with error:" + err.Error())
+		return errors.New("could not update NetworkAttachmentDefinition with the new parent interface name because:" + err.Error())
 	}
-	if parentUpdateNeeded {
-		newNad.Spec.Config = string(PatchCniConf([]byte(newNad.Spec.Config), "master", DetermineHostDeviceName(newdDn)))
-		_, err = netWatcher.NadClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(newNad.ObjectMeta.Namespace).Update(context.TODO(), newNad, meta_v1.UpdateOptions{})
-		if err != nil {
-			log.Println("INFO: Could not update NetworkAttachmentDefinition:" + newNad.ObjectMeta.Name + " with the new parent interface name because:" + err.Error())
-		}
-	}
-}
-
-func DeleteNad(obj interface{}) {
-	nad, isNetwork := obj.(*nadtypes.NetworkAttachmentDefinition)
-	if !isNetwork {
-		tombStone, objIsTombstone := obj.(cache.DeletedFinalStateUnknown)
-		if !objIsTombstone {
-			log.Println("ERROR: Can't delete interfaces for NetworkAttachmentDefinition, 'cause we have received an invalid object from the K8s API server")
-			return
-		}
-		var isObjectInTombStoneNetwork bool
-		nad, isObjectInTombStoneNetwork = tombStone.Obj.(*nadtypes.NetworkAttachmentDefinition)
-		if !isObjectInTombStoneNetwork {
-			log.Println("ERROR: Can't delete interfaces for NetworkAttachmentDefinition, 'cause we have received an invalid object from the K8s API server in the Event tombstone")
-			return
-		}
-	}
-	dnet, err := convertNadToDnet(nad)
-	if err != nil {
-		log.Println("INFO: Deleting host interfaces for NetworkAttachmentDefinition:" + nad.ObjectMeta.Name + " failed with error:" + err.Error())
-		return
-	}
-	err = deleteNetworks(dnet)
-	if err != nil {
-		log.Println("INFO: Deletion of host interfaces for NetworkAttachmentDefinition:" + nad.ObjectMeta.Name + " failed with error:" + err.Error())
-	}
+	return nil
 }
 
 func ConvertTnetToDnet(tnet *danmtypes.TenantNetwork) *danmtypes.DanmNet {
@@ -478,8 +482,6 @@ func ConvertTnetToDnet(tnet *danmtypes.TenantNetwork) *danmtypes.DanmNet {
 		Spec:       tnet.Spec,
 		Status:     tnet.Status,
 	}
-	//Why do I need to set this, you could ask?
-	//Well, don't: https://github.com/kubernetes/client-go/issues/308
 	dnet.TypeMeta.Kind = TenantNetworkKind
 	return &dnet
 }
@@ -708,10 +710,4 @@ func PatchCniConf(rawConf []byte, patchKey string, patchValue interface{}) []byt
 	transparentCniConf[patchKey] = patchValue
 	moddedCniConf, _ := json.Marshal(transparentCniConf)
 	return moddedCniConf
-}
-
-func isIfaceCleanupNeeded(oldDn, newDn *danmtypes.DanmNet) bool {
-	isVlanCleanupNeeded := oldDn.Spec.Options.Vlan != 0 && (oldDn.Spec.Options.Vlan != newDn.Spec.Options.Vlan || oldDn.Spec.Options.Device != newDn.Spec.Options.Device)
-	isVtepCleanupNeeded := oldDn.Spec.Options.Vxlan != 0 && (oldDn.Spec.Options.Vxlan != newDn.Spec.Options.Vxlan || oldDn.Spec.Options.Device != newDn.Spec.Options.Device)
-	return isVlanCleanupNeeded || isVtepCleanupNeeded
 }
