@@ -17,6 +17,7 @@ spec:
       dnsPolicy: ClusterFirst
       hostIPC: true
       hostPID: true
+      priorityClassName: system-node-critical
       containers:
         - name: netwatcher
           image: netwatcher
@@ -32,4 +33,4 @@ spec:
          operator: Exists
        - effect: NoExecute
          operator: Exists
-      terminationGracePeriodSeconds: 0
+      terminationGracePeriodSeconds: 15

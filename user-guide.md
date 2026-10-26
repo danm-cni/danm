@@ -526,6 +526,16 @@ metadata:
 spec:
   config: '{"cniVersion":"0.3.1","ipam":{"routes":[{"dst":"0.0.0.0/0","gw":"10.1.1.1"}],"type":"static"},"master":"vlantest.500","name":"vlantest","type":"ipvlan","vlan":500}'
 ```
+To remember where the host interface needs to be created, Netwatcher also stores the original parent device, and the master value it has written, in annotations of the NAD:
+```
+metadata:
+  annotations:
+    danm.io/parent-device: tenant-bond
+    danm.io/patched-master: vlantest.500
+```
+As long as the master still holds the value Netwatcher has written, the parent device is taken from these annotations. This way you can simply change the "vlan", or "vxlan" tag of the NAD, and Netwatcher re-creates the host interface on top of the same parent device, and updates the master accordingly. If you remove the tag altogether, Netwatcher points the master back to the parent device, and removes the annotations.
+If you want to use a different parent device, just write it into the master; Netwatcher recognizes this as an explicit change, and re-creates the host interface on top of it.
+
 This approach ensures users can seamlessly integrate Netwatcher into their existing clusters and enjoy its extra capabilities without any extra hassle - just the way we like it!
 
 ### Usage of DANM's Svcwatcher component
