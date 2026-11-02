@@ -35,8 +35,7 @@ import (
 )
 
 const (
-	danmApiPath            = "danm.io"
-	danmIfDefinitionSyntax = danmApiPath + "/interfaces"
+	danmIfDefinitionSyntax = datastructs.DanmApiPath + "/interfaces"
 	v1Endpoint             = "/api/v1/"
 	cniVersion             = "0.3.1"
 	defaultNetworkName     = "default"

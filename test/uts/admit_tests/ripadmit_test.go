@@ -615,11 +615,11 @@ var (
 			datastructs.NetworkTypeLabel: "ClusterNetwork"}},
 	}
 	labelsMergedIntoExistingSet = []admit.Patch{
-		{Op: "add", Path: "/metadata/labels/danm.k8s.io~1network-name", Value: "superDualStackWithStatus"},
-		{Op: "add", Path: "/metadata/labels/danm.k8s.io~1network-type", Value: "ClusterNetwork"},
+		{Op: "add", Path: "/metadata/labels/" + datastructs.DanmApiPath + "~1network-name", Value: "superDualStackWithStatus"},
+		{Op: "add", Path: "/metadata/labels/" + datastructs.DanmApiPath + "~1network-type", Value: "ClusterNetwork"},
 	}
 	onlyTypeLabelRefreshed = []admit.Patch{
-		{Op: "add", Path: "/metadata/labels/danm.k8s.io~1network-type", Value: "TenantNetwork"},
+		{Op: "add", Path: "/metadata/labels/" + datastructs.DanmApiPath + "~1network-type", Value: "TenantNetwork"},
 	}
 )
 
