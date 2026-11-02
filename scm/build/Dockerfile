@@ -6,7 +6,7 @@ ARG GID=147
 #
 # Stage: Build container. Used to build all binaries, once
 #
-FROM golang:1.26-alpine3.24 AS builder
+FROM golang:1.27-alpine3.24 AS builder
 MAINTAINER Levente Kale <levente.kale@gmail.com>
 
 ARG USERNAME

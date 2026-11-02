@@ -52,7 +52,7 @@ func getSriovCniConfig(netInfo *danmtypes.DanmNet, ipamOptions datastructs.IpamC
 		return nil, errors.New("failed to get the name of the sriov PF for device " + ep.Spec.Iface.DeviceID + " due to:" + err.Error())
 	}
 	sriovConfig.Master = pfname
-	sriovConfig.Vlan = &netInfo.Spec.Options.Vlan
+	sriovConfig.Vlan = netInfo.Spec.Options.Vlan
 	sriovConfig.DeviceID = ep.Spec.Iface.DeviceID
 	if len(ipamOptions.Ips) > 0 {
 		sriovConfig.Ipam = ipamOptions
