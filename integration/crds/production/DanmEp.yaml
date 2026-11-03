@@ -15,9 +15,6 @@ spec:
   scope: Namespaced
   versions:
   - name: v1
-    selectableFields:
-    - jsonPath: .spec.reservedIpRefs.v4
-    - jsonPath: .spec.reservedIpRefs.v6
     schema:
       openAPIV3Schema:
         properties:

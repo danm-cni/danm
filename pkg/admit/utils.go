@@ -44,19 +44,17 @@ func SendErroneousAdmissionResponse(responseWriter http.ResponseWriter, request 
 		},
 		Allowed: false,
 	}
+	var reqName, reqNs string
 	if request != nil {
 		failedResponse.UID = request.UID
+		reqName = request.Name
+		reqNs = request.Namespace
 	}
-	log.Printf("ERROR: Admitting request: %v failed with error: %v\n", prettyStruct(request), err)
+	log.Printf("ERROR: Admitting request: %v into namespace: %v failed with error: %v\n", reqName, reqNs, err)
 	responseAdmissionReview := v1beta1.AdmissionReview{
 		Response: failedResponse,
 	}
 	SendAdmissionResponse(responseWriter, responseAdmissionReview)
-}
-
-func prettyStruct(obj interface{}) string {
-	bytes, _ := json.MarshalIndent(obj, "\t", "\t")
-	return string(bytes)
 }
 
 func SendAdmissionResponse(responseWriter http.ResponseWriter, reviewResponse v1beta1.AdmissionReview) {

@@ -14,15 +14,14 @@ import (
 	danmtypes "github.com/danm-cni/danm/crd/apis/danm/v1"
 	danmclientset "github.com/danm-cni/danm/crd/client/clientset/versioned"
 	"github.com/danm-cni/danm/pkg/confman"
-	"github.com/danm-cni/danm/pkg/danmep"
 	"github.com/danm-cni/danm/pkg/datastructs"
 	"github.com/danm-cni/danm/pkg/ipam"
 	"github.com/danm-cni/danm/pkg/netcontrol"
 	admv1beta1 "k8s.io/api/admission/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 const (
@@ -122,6 +121,12 @@ func (validator *Validator) validateReserveIp(newNet *danmtypes.DanmNet, oldIp, 
 	if newIp.Name == ipam.DynamicAllocType {
 		return errors.New("name:" + ipam.DynamicAllocType + " is reserved for DANM IPAM internal use, please try again with a different name")
 	}
+	if errs := validation.IsValidLabelValue(newIp.Name); len(errs) > 0 {
+		return fmt.Errorf("name:%v cannot be used because DanmEps reference ReservedIPs via labels and label validation fails with: %v", newIp.Name, strings.Join(errs, ", "))
+	}
+	if errs := validation.IsValidLabelValue(newIp.Spec.Network.Name); len(errs) > 0 {
+		return fmt.Errorf("network:%v cannot be referenced because ReservedIPs are looked up via network name labels and label validation fails with: %v", newIp.Spec.Network.Name, strings.Join(errs, ", "))
+	}
 	err = validateNetworkRef(newIp, validator.Client)
 	if err != nil {
 		return fmt.Errorf("network reference validation failed with error: %w", err)
@@ -140,17 +145,12 @@ func (validator *Validator) isOldIpReferenced(oldIp *danmtypes.ReservedIP) (bool
 	for _, ip := range oldIp.Spec.Ips {
 		if ip.Shareable {
 			addr := net.ParseIP(ip.Address)
-			var fieldSelector string
-			if addr.To4() != nil {
-				fieldSelector = danmep.V4RipFieldSelector
-			} else {
-				fieldSelector = danmep.V6RipFieldSelector
+			ripLabel := datastructs.V4RipLabel
+			if addr.To4() == nil {
+				ripLabel = datastructs.V6RipLabel
 			}
-			selector := fields.SelectorFromSet(fields.Set{
-				fieldSelector: oldIp.Name,
-			})
 			epList, err := validator.Client.DanmV1().DanmEps(oldIp.Namespace).List(context.TODO(), meta_v1.ListOptions{
-				FieldSelector: selector.String(),
+				LabelSelector: labels.Set{ripLabel: oldIp.Name}.String(),
 			})
 			if err != nil {
 				return false, err

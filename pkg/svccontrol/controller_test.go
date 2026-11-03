@@ -8,6 +8,7 @@ import (
 	danmv1 "github.com/danm-cni/danm/crd/apis/danm/v1"
 	danmfake "github.com/danm-cni/danm/crd/client/clientset/versioned/fake"
 	danminformers "github.com/danm-cni/danm/crd/client/informers/externalversions"
+	"github.com/danm-cni/danm/pkg/datastructs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -15,6 +16,8 @@ import (
 	types "k8s.io/apimachinery/pkg/types"
 	coreinformers "k8s.io/client-go/informers"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/cache"
 )
 
 func TestPodFilterFunc(t *testing.T) {
@@ -58,29 +61,59 @@ func TestDanmEpFilterFunc(t *testing.T) {
 	assert.False(t, isDanmEpRelevant(&corev1.Pod{}))
 }
 
-func TestDanmEpIndexer(t *testing.T) {
-	// create fake kube client and informer factory
+// newTestController builds a leading Controller on top of fake API clients
+// Its informers are never started: tests populate the caches via addObjects, and invoke the sync functions themselves
+func newTestController(t *testing.T) (*Controller, *k8sfake.Clientset, *danmfake.Clientset) {
+	t.Helper()
 	kubeClient := k8sfake.NewSimpleClientset()
 	kubeInformerFactory := coreinformers.NewSharedInformerFactory(kubeClient, 0)
-
-	// create fake danm client and informer factory
 	danmClient := danmfake.NewSimpleClientset()
 	danmInformerFactory := danminformers.NewSharedInformerFactory(danmClient, 0)
-
-	// build informers needed by NewController
-	podInformer := kubeInformerFactory.Core().V1().Pods()
-	svcInformer := kubeInformerFactory.Core().V1().Services()
-	epsInformer := kubeInformerFactory.Core().V1().Endpoints()
-	depInformer := danmInformerFactory.Danm().V1().DanmEps()
-
-	// create controller
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	ctrl, err := NewController(ctx.Done(), kubeClient, danmClient, podInformer, svcInformer, epsInformer, depInformer)
+	t.Cleanup(cancel)
+	ctrl, err := NewController(ctx.Done(), kubeClient, danmClient,
+		kubeInformerFactory.Core().V1().Pods(),
+		kubeInformerFactory.Core().V1().Services(),
+		kubeInformerFactory.Core().V1().Endpoints(),
+		danmInformerFactory.Danm().V1().DanmEps())
 	require.NoErrorf(t, err, "NewController returned error: %v", err)
 	require.NotNilf(t, ctrl, "NewController returned nil")
+	ctrl.isLeader.Store(true)
+	return ctrl, kubeClient, danmClient
+}
 
-	store := ctrl.danmepInformer.GetStore()
+// addObjects creates the objects in the fake API servers, then adds them to the matching informer cache, as a synced informer would
+//
+//nolint:staticcheck // Endpoints is deprecated but still supported, refactor it at some point though
+func addObjects(t *testing.T, ctrl *Controller, objs ...metav1.Object) {
+	t.Helper()
+	for _, obj := range objs {
+		var err error
+		var store cache.Store
+		switch o := obj.(type) {
+		case *corev1.Pod:
+			_, err = ctrl.kubeclient.CoreV1().Pods(o.Namespace).Create(context.TODO(), o, metav1.CreateOptions{})
+			store = ctrl.podInformer.GetStore()
+		case *corev1.Service:
+			_, err = ctrl.kubeclient.CoreV1().Services(o.Namespace).Create(context.TODO(), o, metav1.CreateOptions{})
+			store = ctrl.serviceInformer.GetStore()
+		case *corev1.Endpoints:
+			_, err = ctrl.kubeclient.CoreV1().Endpoints(o.Namespace).Create(context.TODO(), o, metav1.CreateOptions{})
+			store = ctrl.epsInformer.GetStore()
+		case *danmv1.DanmEp:
+			_, err = ctrl.danmclient.DanmV1().DanmEps(o.Namespace).Create(context.TODO(), o, metav1.CreateOptions{})
+			store = ctrl.danmepInformer.GetStore()
+		default:
+			t.Fatalf("addObjects does not support objects of type %T", obj)
+		}
+		require.NoErrorf(t, err, "failed creating %T %s/%s in the fake API: %v", obj, obj.GetNamespace(), obj.GetName(), err)
+		err = store.Add(obj)
+		require.NoErrorf(t, err, "failed adding %T %s/%s to the informer cache: %v", obj, obj.GetNamespace(), obj.GetName(), err)
+	}
+}
+
+func TestDanmEpIndexer(t *testing.T) {
+	ctrl, _, _ := newTestController(t)
 
 	dep1 := &danmv1.DanmEp{ObjectMeta: metav1.ObjectMeta{
 		Name:      "dep1",
@@ -112,9 +145,7 @@ func TestDanmEpIndexer(t *testing.T) {
 			Pod:         "pod3",
 		}}
 
-	store.Add(dep1)
-	store.Add(dep2)
-	store.Add(dep3)
+	addObjects(t, ctrl, dep1, dep2, dep3)
 
 	// pod2 should not be in any index
 	indexed, err := ctrl.danmepInformer.GetIndexer().ByIndex(ctrl.idx.Pod, "default/pod2")
@@ -183,21 +214,8 @@ func TestDanmEpIndexer(t *testing.T) {
 }
 
 func TestSyncPod_UpdatesDanmEpLabels(t *testing.T) {
-	// create fake kube client and informer factory
-	kubeClient := k8sfake.NewSimpleClientset()
-	kubeInformerFactory := coreinformers.NewSharedInformerFactory(kubeClient, 0)
+	ctrl, _, danmClient := newTestController(t)
 
-	// create fake danm client and informer factory
-	danmClient := danmfake.NewSimpleClientset()
-	danmInformerFactory := danminformers.NewSharedInformerFactory(danmClient, 0)
-
-	// build informers needed by NewController
-	podInformer := kubeInformerFactory.Core().V1().Pods()
-	svcInformer := kubeInformerFactory.Core().V1().Services()
-	epsInformer := kubeInformerFactory.Core().V1().Endpoints()
-	depInformer := danmInformerFactory.Danm().V1().DanmEps()
-
-	// prepare test objects
 	ns := "default"
 	podName := "mypod"
 	podUID := types.UID("pod-uid-123")
@@ -239,70 +257,89 @@ func TestSyncPod_UpdatesDanmEpLabels(t *testing.T) {
 		},
 	}
 
-	// add to kubernetes
-	_, err := kubeClient.CoreV1().Pods(ns).Create(context.TODO(), pod, metav1.CreateOptions{})
-	require.NoErrorf(t, err, "failed creating pod in kube api: %v", err)
-	_, err = danmClient.DanmV1().DanmEps(ns).Create(context.TODO(), dep, metav1.CreateOptions{})
-	require.NoError(t, err, "failed creating DanmEp in danm api: %v", err)
+	addObjects(t, ctrl, pod, dep)
 
-	// create controller
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	ctrl, err := NewController(ctx.Done(), kubeClient, danmClient, podInformer, svcInformer, epsInformer, depInformer)
-	require.NoErrorf(t, err, "NewController returned error: %v", err)
-	require.NotNilf(t, ctrl, "NewController returned nil")
-
-	// set leader
-	ctrl.isLeader.Store(true)
-
-	// add to underlying informers' stores so listers can find them
-	err = ctrl.podInformer.GetStore().Add(pod)
-	require.NoErrorf(t, err, "failed to add pod to store: %v", err)
-	err = ctrl.danmepInformer.GetStore().Add(dep)
-	require.NoErrorf(t, err, "failed to add danmep to store: %v", err)
-
-	// Now call syncPod
-	err = ctrl.syncPod(ns, podName)
+	err := ctrl.syncPod(ns, podName)
 	require.NoErrorf(t, err, "syncPod returned error: %v", err)
 	err = ctrl.syncPod(ns, podName)
 	require.NoErrorf(t, err, "syncPod returned error: %v", err)
 
 	// Validate that danmClient recorded an update action for danmeps
 	actions := danmClient.Actions()
-	foundUpdate := false
-	for _, a := range actions {
-		if a.GetVerb() == "update" && a.GetResource().Resource == "danmeps" {
-			foundUpdate = true
-			break
-		}
-	}
-	assert.Truef(t, foundUpdate, "expected danmclient Update action on DanmEp, got actions: %#v", actions)
+	assert.Truef(t, hasAction(actions, "update", "danmeps"), "expected danmclient Update action on DanmEp, got actions: %#v", actions)
 
-	// Check result in kubernetes
 	newDep, err := danmClient.DanmV1().DanmEps(ns).Get(context.TODO(), depName, metav1.GetOptions{})
 	require.NoError(t, err, "DanmEp object could not be GET")
 	assert.Equal(t, pod.Labels, newDep.Labels)
 }
 
+// ReservedIP labels of a DanmEp are derived from its Spec, so syncing Pod labels must neither drop them, nor let the Pod spoof them
+func TestSyncPod_KeepsDanmEpRipLabels(t *testing.T) {
+	ctrl, _, danmClient := newTestController(t)
+
+	ns := "default"
+	podName := "mypod"
+	podUID := types.UID("pod-uid-123")
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            podName,
+			Namespace:       ns,
+			UID:             podUID,
+			ResourceVersion: "2",
+			Labels:          map[string]string{"app": "x", datastructs.V6RipLabel: "spoofedRip"},
+		},
+		Status: corev1.PodStatus{
+			Conditions: []corev1.PodCondition{
+				{Type: corev1.PodReady, Status: corev1.ConditionTrue},
+			},
+		},
+		Spec: corev1.PodSpec{
+			Hostname: "host1",
+			NodeName: "node1",
+		},
+	}
+
+	// DanmEp that references the pod but has different labels (so syncPod should update it)
+	depName := "dep1"
+	dep := &danmv1.DanmEp{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      depName,
+			Namespace: ns,
+			Labels:    map[string]string{"app": "old", datastructs.V4RipLabel: "sharedRip"},
+		},
+		Spec: danmv1.DanmEpSpec{
+			Pod:         podName,
+			PodUID:      podUID,
+			ApiType:     "V4",
+			NetworkName: "net1",
+			RipRefs:     danmv1.RipReferences{V4: "sharedRip"},
+			Iface: danmv1.DanmEpIface{
+				Address: "10.1.1.5/24",
+			},
+		},
+	}
+
+	addObjects(t, ctrl, pod, dep)
+	err := ctrl.syncPod(ns, podName)
+	require.NoErrorf(t, err, "syncPod returned error: %v", err)
+	err = ctrl.syncPod(ns, podName)
+	require.NoErrorf(t, err, "syncPod returned error: %v", err)
+
+	// Validate that danmClient recorded an update action for danmeps
+	actions := danmClient.Actions()
+	assert.Truef(t, hasAction(actions, "update", "danmeps"), "expected danmclient Update action on DanmEp, got actions: %#v", actions)
+
+	// Check result in kubernetes
+	newDep, err := danmClient.DanmV1().DanmEps(ns).Get(context.TODO(), depName, metav1.GetOptions{})
+	require.NoError(t, err, "DanmEp object could not be GET")
+	assert.Equal(t, map[string]string{"app": "x", datastructs.V4RipLabel: "sharedRip"}, newDep.Labels)
+}
+
 //nolint:staticcheck // Endpoints and EndpointSubset are deprecated but still supported, refactor it at some point though
 func TestSyncPod_UpdatesEps(t *testing.T) {
-	// create fake kube client and informer factory
-	kubeClient := k8sfake.NewSimpleClientset()
-	kubeInformerFactory := coreinformers.NewSharedInformerFactory(kubeClient, 0)
+	ctrl, kubeClient, _ := newTestController(t)
 
-	// create fake danm client and informer factory
-	danmClient := danmfake.NewSimpleClientset()
-	danmInformerFactory := danminformers.NewSharedInformerFactory(danmClient, 0)
-
-	// build informers needed by NewController
-	podInformer := kubeInformerFactory.Core().V1().Pods()
-	svcInformer := kubeInformerFactory.Core().V1().Services()
-	epsInformer := kubeInformerFactory.Core().V1().Endpoints()
-	depInformer := danmInformerFactory.Danm().V1().DanmEps()
-
-	// prepare test objects
 	ns := "default"
-
 	podName := "mypod"
 	podUID := types.UID("pod-uid-123")
 	podName2 := "mypod2"
@@ -326,14 +363,12 @@ func TestSyncPod_UpdatesEps(t *testing.T) {
 		},
 	}
 
-	// ctrl svc and eps selector from pod
 	svcName := "mysvc"
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            svcName,
 			Namespace:       ns,
 			ResourceVersion: "2",
-			//			Annotations:      map[string]string{"danm.io/clusterNetwork": "ctrl", "danm.io/selector": "{\"app\": \"x\"}", "service.alpha.kubernetes.io/tolerate-unready-endpoints": "true"},
 		},
 	}
 
@@ -393,52 +428,14 @@ func TestSyncPod_UpdatesEps(t *testing.T) {
 		},
 	}
 
-	// add to kubernetes
-	_, err := kubeClient.CoreV1().Pods(ns).Create(context.TODO(), pod, metav1.CreateOptions{})
-	require.NoErrorf(t, err, "failed creating pod in kube api: %v", err)
-	_, err = kubeClient.CoreV1().Services(ns).Create(context.TODO(), svc, metav1.CreateOptions{})
-	require.NoErrorf(t, err, "failed creating svc in kube api: %v", err)
-	_, err = kubeClient.CoreV1().Endpoints(ns).Create(context.TODO(), eps, metav1.CreateOptions{})
-	require.NoErrorf(t, err, "failed creating eps in kube api: %v", err)
-	_, err = danmClient.DanmV1().DanmEps(ns).Create(context.TODO(), dep, metav1.CreateOptions{})
-	require.NoErrorf(t, err, "failed creating DanmEp in danm api: %v", err)
-
-	// create controller
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	ctrl, err := NewController(ctx.Done(), kubeClient, danmClient, podInformer, svcInformer, epsInformer, depInformer)
-	require.NoErrorf(t, err, "NewController returned error: %v", err)
-	require.NotNilf(t, ctrl, "NewController returned nil")
-
-	// set leader
-	ctrl.isLeader.Store(true)
-
-	// add to underlying informers' stores so listers can find them
-	err = ctrl.podInformer.GetStore().Add(pod)
-	require.NoErrorf(t, err, "failed to add pod to store: %v", err)
-	err = ctrl.serviceInformer.GetStore().Add(svc)
-	require.NoErrorf(t, err, "failed to add svc to store: %v", err)
-	err = ctrl.epsInformer.GetStore().Add(eps)
-	require.NoError(t, err, "failed to add eps to store: %v", err)
-	err = ctrl.danmepInformer.GetStore().Add(dep)
-	require.NoError(t, err, "failed to add danmep to store: %v", err)
-
-	// Now call syncPod
-	err = ctrl.syncPod(ns, podName)
+	addObjects(t, ctrl, pod, svc, eps, dep)
+	err := ctrl.syncPod(ns, podName)
 	require.NoErrorf(t, err, "syncPod returned error: %v", err)
 
 	// Validate that kubeClient recorded an update action for endpoints
 	actions := kubeClient.Actions()
-	foundUpdate := false
-	for _, a := range actions {
-		if a.GetVerb() == "update" && a.GetResource().Resource == "endpoints" {
-			foundUpdate = true
-			break
-		}
-	}
-	assert.Truef(t, foundUpdate, "expected kubeclient Update action on Endpoints, got actions: %#v", actions)
+	assert.Truef(t, hasAction(actions, "update", "endpoints"), "expected kubeclient Update action on Endpoints, got actions: %#v", actions)
 
-	// Check result in kubernetes
 	newEps, err := kubeClient.CoreV1().Endpoints(ns).Get(context.TODO(), svcName, metav1.GetOptions{})
 	require.NoErrorf(t, err, "Eps object could not be GET: %v", err)
 	foundIP := false
@@ -453,17 +450,8 @@ func TestSyncPod_UpdatesEps(t *testing.T) {
 
 // Test that reconcileAllEndpoints enqueues all services
 func TestReconcileAllEndpoints_EnqueuesOnlyRelevantServices(t *testing.T) {
-	kubeClient := k8sfake.NewSimpleClientset()
-	kubeInformerFactory := coreinformers.NewSharedInformerFactory(kubeClient, 0)
-	danmClient := danmfake.NewSimpleClientset()
-	danmInformerFactory := danminformers.NewSharedInformerFactory(danmClient, 0)
+	ctrl, _, _ := newTestController(t)
 
-	podInformer := kubeInformerFactory.Core().V1().Pods()
-	svcInformer := kubeInformerFactory.Core().V1().Services()
-	epsInformer := kubeInformerFactory.Core().V1().Endpoints()
-	depInformer := danmInformerFactory.Danm().V1().DanmEps()
-
-	// prepare objects: only the Services carrying a DANM Pod selector are reconciled
 	svc1 := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        "svc1",
@@ -485,39 +473,13 @@ func TestReconcileAllEndpoints_EnqueuesOnlyRelevantServices(t *testing.T) {
 		},
 	}
 
-	// add to kubernetes
-	_, err := kubeClient.CoreV1().Services("ns1").Create(context.TODO(), svc1, metav1.CreateOptions{})
-	require.NoErrorf(t, err, "failed creating svc in kube api: %v", err)
-	_, err = kubeClient.CoreV1().Services("ns2").Create(context.TODO(), svc2, metav1.CreateOptions{})
-	require.NoErrorf(t, err, "failed creating eps in kube api: %v", err)
-	_, err = kubeClient.CoreV1().Services("ns1").Create(context.TODO(), vanillaSvc, metav1.CreateOptions{})
-	require.NoErrorf(t, err, "failed creating vanilla svc in kube api: %v", err)
+	addObjects(t, ctrl, svc1, svc2, vanillaSvc)
 
-	// create controller
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	ctrl, err := NewController(ctx.Done(), kubeClient, danmClient, podInformer, svcInformer, epsInformer, depInformer)
-	require.NoErrorf(t, err, "NewController returned error: %v", err)
-	require.NotNilf(t, ctrl, "NewController returned nil")
-
-	// set leader
-	ctrl.isLeader.Store(true)
-
-	// add to informers
-	err = svcInformer.Informer().GetStore().Add(svc1)
-	require.NoErrorf(t, err, "failed to add svc1 to store: %v", err)
-	err = svcInformer.Informer().GetStore().Add(svc2)
-	require.NoErrorf(t, err, "failed to add svc2 to store: %v", err)
-	err = svcInformer.Informer().GetStore().Add(vanillaSvc)
-	require.NoErrorf(t, err, "failed to add vanilla svc to store: %v", err)
-
-	// Clear any existing items in the queue
 	for ctrl.workqueue.Len() > 0 {
 		obj, _ := ctrl.workqueue.Get()
 		ctrl.workqueue.Done(obj)
 	}
 
-	// Call reconciliation
 	ctrl.reconcileAllEndpoints()
 
 	// both DANM Services are enqueued, the vanilla one is not
@@ -534,21 +496,20 @@ func TestReconcileAllEndpoints_EnqueuesOnlyRelevantServices(t *testing.T) {
 	assert.ElementsMatch(t, []string{"svc/ns1/svc1", "svc/ns2/svc2"}, enqueued)
 }
 
-// countEpsUpdates tells how many Endpoints update calls the fake client has seen so far, so a test
-// can assert that a reconcile which should have been a no-op really did not write anything
-func countEpsUpdates(kubeClient *k8sfake.Clientset) int {
+func countActions(actions []k8stesting.Action, verb, resource string) int {
 	count := 0
-	for _, a := range kubeClient.Actions() {
-		if a.GetVerb() == "update" && a.GetResource().Resource == "endpoints" {
+	for _, a := range actions {
+		if a.GetVerb() == verb && a.GetResource().Resource == resource {
 			count++
 		}
 	}
 	return count
 }
 
-// epIPs collects the IP addresses of an Endpoints address list, so assertions can be made on the
-// contents of a subset without depending on the order the addresses happen to be in
-//
+func hasAction(actions []k8stesting.Action, verb, resource string) bool {
+	return countActions(actions, verb, resource) > 0
+}
+
 //nolint:staticcheck // Endpoints is deprecated but still supported, refactor it at some point though
 func epIPs(addrs []corev1.EndpointAddress) []string {
 	ips := make([]string, 0, len(addrs))
@@ -563,23 +524,9 @@ func TestSyncPod_FromPodCreationTillRemoval(t *testing.T) {
 	const v4Addr = "10.1.1.5"
 	const v6Addr = "2001:db8::5"
 
-	// create fake kube client and informer factory
-	kubeClient := k8sfake.NewSimpleClientset()
-	kubeInformerFactory := coreinformers.NewSharedInformerFactory(kubeClient, 0)
+	ctrl, kubeClient, _ := newTestController(t)
 
-	// create fake danm client and informer factory
-	danmClient := danmfake.NewSimpleClientset()
-	danmInformerFactory := danminformers.NewSharedInformerFactory(danmClient, 0)
-
-	// build informers needed by NewController
-	podInformer := kubeInformerFactory.Core().V1().Pods()
-	svcInformer := kubeInformerFactory.Core().V1().Services()
-	epsInformer := kubeInformerFactory.Core().V1().Endpoints()
-	depInformer := danmInformerFactory.Danm().V1().DanmEps()
-
-	// prepare test objects
 	ns := "default"
-
 	podName := "mypod"
 	podUID := types.UID("pod-uid-123")
 	pod := &corev1.Pod{
@@ -602,15 +549,13 @@ func TestSyncPod_FromPodCreationTillRemoval(t *testing.T) {
 		},
 	}
 
-	// ctrl svc and eps selector from pod
 	svcName := "mysvc"
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            svcName,
 			Namespace:       ns,
 			ResourceVersion: "2",
-			//Annotations:      map[string]string{"danm.io/clusterNetwork": "ctrl", "danm.io/selector": "{\"app\": \"x\"}", "service.alpha.kubernetes.io/tolerate-unready-endpoints": "true"},
-			Annotations: map[string]string{"danm.io/clusterNetwork": "ctrl", "danm.io/selector": "{\"app\": \"x\"}"},
+			Annotations:     map[string]string{"danm.io/clusterNetwork": "ctrl", "danm.io/selector": "{\"app\": \"x\"}"},
 		},
 	}
 
@@ -627,7 +572,6 @@ func TestSyncPod_FromPodCreationTillRemoval(t *testing.T) {
 			PodUID:      podUID,
 			ApiType:     "ClusterNetwork",
 			NetworkName: "ctrl",
-			// dual-stack: both families have to travel through the whole lifecycle together
 			Iface: danmv1.DanmEpIface{
 				Address:     v4Addr + "/24",
 				AddressIPv6: v6Addr + "/64",
@@ -635,44 +579,12 @@ func TestSyncPod_FromPodCreationTillRemoval(t *testing.T) {
 		},
 	}
 
-	// create controller
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	ctrl, err := NewController(ctx.Done(), kubeClient, danmClient, podInformer, svcInformer, epsInformer, depInformer)
-	require.NoErrorf(t, err, "NewController returned error: %v", err)
-	require.NotNilf(t, ctrl, "NewController returned nil")
-
-	// set leader
-	ctrl.isLeader.Store(true)
-
 	podStore := ctrl.podInformer.GetStore()
-	require.NotNilf(t, podStore, "podstore error")
 	epsStore := ctrl.epsInformer.GetStore()
-	require.NotNilf(t, epsStore, "epsstore error")
-	svcStore := ctrl.serviceInformer.GetStore()
-	require.NotNilf(t, svcStore, "svcstore error")
 	danmepStore := ctrl.danmepInformer.GetStore()
-	require.NotNilf(t, danmepStore, "danmepstore error")
+	addObjects(t, ctrl, pod, dep)
 
-	// *** Preparation is ready, kubernetes and informers are empty
-
-	// add pod to kubernetes
-	_, err = kubeClient.CoreV1().Pods(ns).Create(context.TODO(), pod, metav1.CreateOptions{})
-	require.NoErrorf(t, err, "failed creating pod in kube api: %v", err)
-
-	// ad danmep related to pod to kubernetes
-	_, err = danmClient.DanmV1().DanmEps(ns).Create(context.TODO(), dep, metav1.CreateOptions{})
-	require.NoError(t, err, "failed creating DanmEp in danm api: %v", err)
-
-	// add to underlying informers' stores so listers can find them
-	err = danmepStore.Add(dep)
-	require.NoErrorf(t, err, "failed to add danmep to store: %v", err)
-	err = podStore.Add(pod)
-	require.NoErrorf(t, err, "failed to add pod to store: %v", err)
-
-	// ============================
-	// once danmep creation is happening: trigger danmep reconcile
-	err = ctrl.syncDanmEp(ns, depName)
+	err := ctrl.syncDanmEp(ns, depName)
 	require.NoErrorf(t, err, "syncDanmEp returned error: %v", err)
 
 	// as there is no related svc in kubernetes: no eps created/updated
@@ -691,13 +603,8 @@ func TestSyncPod_FromPodCreationTillRemoval(t *testing.T) {
 	assert.Equal(t, 0, len(epsList.Items))
 
 	// ============================
-	// add svc to kubernetes
-	_, err = kubeClient.CoreV1().Services(ns).Create(context.TODO(), svc, metav1.CreateOptions{})
-	require.NoErrorf(t, err, "failed creating svc in kube api: %v", err)
-
-	// add to underlying informers' stores so listers can find them
-	err = svcStore.Add(svc)
-	require.NoErrorf(t, err, "failed to add svc to store: %v", err)
+	// add svc to kubernetes and to the informer cache
+	addObjects(t, ctrl, svc)
 
 	// trigger svc reconcile
 	err = ctrl.syncSvc(ns, svcName)
@@ -718,10 +625,10 @@ func TestSyncPod_FromPodCreationTillRemoval(t *testing.T) {
 	// ============================
 	// the DanmEp is reconciled again while the Endpoints already holds both of its addresses:
 	// epCheckUpdate has to recognise them in NotReadyAddresses and leave the Endpoints alone
-	updatesBefore := countEpsUpdates(kubeClient)
+	updatesBefore := countActions(kubeClient.Actions(), "update", "endpoints")
 	err = ctrl.syncDanmEp(ns, depName)
 	require.NoErrorf(t, err, "syncDanmEp returned error: %v", err)
-	assert.Equal(t, updatesBefore, countEpsUpdates(kubeClient), "an unchanged Endpoints shall not be rewritten")
+	assert.Equal(t, updatesBefore, countActions(kubeClient.Actions(), "update", "endpoints"), "an unchanged Endpoints shall not be rewritten")
 
 	epsList, err = kubeClient.CoreV1().Endpoints(ns).List(context.TODO(), metav1.ListOptions{})
 	require.NoErrorf(t, err, "failed listing eps: %v", err)
@@ -761,8 +668,6 @@ func TestSyncPod_FromPodCreationTillRemoval(t *testing.T) {
 	err = epsStore.Update(eps)
 	require.NoErrorf(t, err, "failed to add eps to store: %v", err)
 
-	// ============================
-	// make pod Ready
 	pod, err = kubeClient.CoreV1().Pods(ns).Get(context.TODO(), podName, metav1.GetOptions{})
 	require.NoErrorf(t, err, "failed getting Pod: %v", err)
 	updated := pod.DeepCopy()
@@ -772,8 +677,6 @@ func TestSyncPod_FromPodCreationTillRemoval(t *testing.T) {
 	require.NoErrorf(t, err, "failed creating pod in kube api: %v", err)
 	err = podStore.Update(updated)
 	require.NoErrorf(t, err, "failed to add pod to store: %v", err)
-
-	// trigger pod reconcile
 	err = ctrl.syncPod(ns, podName)
 	require.NoErrorf(t, err, "syncPod returned error: %v", err)
 
@@ -784,14 +687,10 @@ func TestSyncPod_FromPodCreationTillRemoval(t *testing.T) {
 	require.Equal(t, 1, len(epsList.Items))
 	require.Empty(t, epsList.Items[0].Subsets[0].NotReadyAddresses)
 	require.ElementsMatch(t, []string{v4Addr, v6Addr}, epIPs(epsList.Items[0].Subsets[0].Addresses))
-
-	// add epsList to to informer
 	eps = epsList.Items[0].DeepCopy()
 	err = epsStore.Update(eps)
 	require.NoErrorf(t, err, "failed to add eps to store: %v", err)
 
-	// ============================
-	// make Pod to have DeletionTimestamp
 	pod, err = kubeClient.CoreV1().Pods(ns).Get(context.TODO(), podName, metav1.GetOptions{})
 	require.NoErrorf(t, err, "failed to list pods: %v", err)
 	updated = pod.DeepCopy()
@@ -801,8 +700,6 @@ func TestSyncPod_FromPodCreationTillRemoval(t *testing.T) {
 	require.NoErrorf(t, err, "failed creating pod in kube api: %v", err)
 	err = podStore.Update(updated)
 	require.NoErrorf(t, err, "failed to add pod to store: %v", err)
-
-	// trigger pod reconcile
 	err = ctrl.syncPod(ns, podName)
 	require.NoErrorf(t, err, "syncPod returned error: %v", err)
 
@@ -812,8 +709,6 @@ func TestSyncPod_FromPodCreationTillRemoval(t *testing.T) {
 	require.Equal(t, 1, len(epsList.Items))
 	require.Empty(t, epsList.Items[0].Subsets[0].Addresses)
 	require.ElementsMatch(t, []string{v4Addr, v6Addr}, epIPs(epsList.Items[0].Subsets[0].NotReadyAddresses))
-
-	// add epsList to to informer
 	eps = epsList.Items[0].DeepCopy()
 	err = epsStore.Update(eps)
 	require.NoErrorf(t, err, "failed to add eps to store: %v", err)
@@ -833,36 +728,15 @@ func TestSyncPod_FromPodCreationTillRemoval(t *testing.T) {
 	require.NoErrorf(t, err, "failed listing eps: %v", err)
 	require.Equal(t, 1, len(epsList.Items))
 	require.Equal(t, 0, len(epsList.Items[0].Subsets))
-
-	// add epsList to to informer
 	eps = epsList.Items[0].DeepCopy()
 	err = epsStore.Update(eps)
 	require.NoErrorf(t, err, "failed to add eps to store: %v", err)
-
-	// ============================
-	// delete svc for headless-selectorless services triggers eps delete on kubernetes
-	// cache is syncing: removed eps from informer as well
 }
 
 //nolint:staticcheck // Endpoints and EndpointSubset are deprecated but still supported, refactor it at some point though
 func TestSubsetsOrder(t *testing.T) {
-	// create fake kube client and informer factory
-	kubeClient := k8sfake.NewSimpleClientset()
-	kubeInformerFactory := coreinformers.NewSharedInformerFactory(kubeClient, 0)
-
-	// create fake danm client and informer factory
-	danmClient := danmfake.NewSimpleClientset()
-	danmInformerFactory := danminformers.NewSharedInformerFactory(danmClient, 0)
-
-	// build informers needed by NewController
-	podInformer := kubeInformerFactory.Core().V1().Pods()
-	svcInformer := kubeInformerFactory.Core().V1().Services()
-	epsInformer := kubeInformerFactory.Core().V1().Endpoints()
-	depInformer := danmInformerFactory.Danm().V1().DanmEps()
-
-	// prepare test objects
+	ctrl, kubeClient, _ := newTestController(t)
 	ns := "default"
-
 	pod1Name := "pod1"
 	pod1UID := types.UID("pod-uid-123")
 	pod1 := &corev1.Pod{
@@ -907,7 +781,6 @@ func TestSubsetsOrder(t *testing.T) {
 		},
 	}
 
-	// ctrl svc and eps selector from pods
 	svcName := "mysvc"
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -957,7 +830,6 @@ func TestSubsetsOrder(t *testing.T) {
 		},
 	}
 
-	// DanmEps in sync with pods
 	dep1Name := "dep1"
 	dep1 := &danmv1.DanmEp{
 		ObjectMeta: metav1.ObjectMeta{
@@ -994,38 +866,16 @@ func TestSubsetsOrder(t *testing.T) {
 		},
 	}
 
-	// create controller
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	ctrl, err := NewController(ctx.Done(), kubeClient, danmClient, podInformer, svcInformer, epsInformer, depInformer)
-	require.NoErrorf(t, err, "NewController returned error: %v", err)
-	require.NotNilf(t, ctrl, "NewController returned nil")
-
-	// set leader
-	ctrl.isLeader.Store(true)
-
-	// add pods to store
-	err = ctrl.podInformer.GetStore().Add(pod1)
-	require.NoErrorf(t, err, "failed to add pod to store: %v", err)
-	err = ctrl.podInformer.GetStore().Add(pod2)
-	require.NoErrorf(t, err, "failed to add pod to store: %v", err)
+	addObjects(t, ctrl, pod1, pod2)
 
 	// CASE1: old and new eps has same content
 	// createModifyEndpoints
 	des := []*danmv1.DanmEp{dep1, dep2}
-	err = ctrl.createModifyEndpoints(svc, eps, des)
+	err := ctrl.createModifyEndpoints(svc, eps, des)
 	require.NoErrorf(t, err, "error occured: %v", err)
 
-	// Validate that kubeClient did not record an update action for endpoints
 	actions := kubeClient.Actions()
-	foundUpdate := false
-	for _, a := range actions {
-		if a.GetVerb() == "update" && a.GetResource().Resource == "endpoints" {
-			foundUpdate = true
-			break
-		}
-	}
-	assert.Falsef(t, foundUpdate, "not expected kubeclient Update action on Endpoints, got actions: %#v", actions)
+	assert.Falsef(t, hasAction(actions, "update", "endpoints"), "not expected kubeclient Update action on Endpoints, got actions: %#v", actions)
 
 	// CASE2: old eps has no subset
 	epsEmpty := &corev1.Endpoints{
@@ -1037,70 +887,25 @@ func TestSubsetsOrder(t *testing.T) {
 		},
 	}
 
-	// add epsEmpty to k8s: it can be updated then
 	_, err = kubeClient.CoreV1().Endpoints(ns).Create(context.TODO(), eps, metav1.CreateOptions{})
 	require.NoErrorf(t, err, "failed creating eps in kube api: %v", err)
-	// createModifyEndPoints
 	err = ctrl.createModifyEndpoints(svc, epsEmpty, des)
 	require.NoErrorf(t, err, "error occured: %v", err)
-
-	// Validate that kubeClient recorded an update action for endpoints
 	actions = kubeClient.Actions()
-	foundUpdate = false
-	for _, a := range actions {
-		if a.GetVerb() == "update" && a.GetResource().Resource == "endpoints" {
-			foundUpdate = true
-			break
-		}
-	}
-	assert.Truef(t, foundUpdate, "expected kubeclient Update action on Endpoints, got actions: %#v", actions)
+	assert.Truef(t, hasAction(actions, "update", "endpoints"), "expected kubeclient Update action on Endpoints, got actions: %#v", actions)
 
 	// CASE3: old eps is nil
 	svc.Name = "somethingelse"
-	// createModifyEndPoints
 	err = ctrl.createModifyEndpoints(svc, nil, des)
 	require.NoErrorf(t, err, "error occured: %v", err)
-
-	// Validate that kubeClient recorded an create action for endpoints
 	actions = kubeClient.Actions()
-	foundCreate := false
-	for _, a := range actions {
-		if a.GetVerb() == "create" && a.GetResource().Resource == "endpoints" {
-			foundCreate = true
-			break
-		}
-	}
-	assert.Truef(t, foundCreate, "expected kubeclient Create action on Endpoints, got actions: %#v", actions)
+	assert.Truef(t, hasAction(actions, "create", "endpoints"), "expected kubeclient Create action on Endpoints, got actions: %#v", actions)
 
 }
 
 func TestSyncDanmEpDelete_UnknownDanmEp(t *testing.T) {
-	// create fake kube client and informer factory
-	kubeClient := k8sfake.NewSimpleClientset()
-	kubeInformerFactory := coreinformers.NewSharedInformerFactory(kubeClient, 0)
-
-	// create fake danm client and informer factory
-	danmClient := danmfake.NewSimpleClientset()
-	danmInformerFactory := danminformers.NewSharedInformerFactory(danmClient, 0)
-
-	// build informers needed by NewController
-	podInformer := kubeInformerFactory.Core().V1().Pods()
-	svcInformer := kubeInformerFactory.Core().V1().Services()
-	epsInformer := kubeInformerFactory.Core().V1().Endpoints()
-	depInformer := danmInformerFactory.Danm().V1().DanmEps()
-
-	// create controller
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	ctrl, err := NewController(ctx.Done(), kubeClient, danmClient, podInformer, svcInformer, epsInformer, depInformer)
-	require.NoErrorf(t, err, "NewController returned error: %v", err)
-	require.NotNilf(t, ctrl, "NewController returned nil")
-
-	// set leader
-	ctrl.isLeader.Store(true)
-
-	// the deleted DanmEp is not in the store, e.g. because its deletion was already processed
-	err = ctrl.syncDanmEpDelete("default", "unknown-dep")
+	ctrl, kubeClient, _ := newTestController(t)
+	err := ctrl.syncDanmEpDelete("default", "unknown-dep")
 	require.NoErrorf(t, err, "syncDanmEpDelete returned error: %v", err)
 	assert.Empty(t, kubeClient.Actions(), "no Endpoints shall be touched for an unknown DanmEp")
 }
