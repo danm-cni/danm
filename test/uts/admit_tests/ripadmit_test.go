@@ -116,6 +116,22 @@ var (
 		},
 		{
 			TypeMeta:   meta_v1.TypeMeta{Kind: "ReservedIP"},
+			ObjectMeta: meta_v1.ObjectMeta{Name: "rip-name-that-is-too-long-to-be-used-as-a-label-value-on-danmeps", Namespace: "rip-test"},
+			Spec: danmtypes.ReservedIPSpec{
+				Network: danmtypes.RipNetworkSelector{Name: "superDualStack", Type: "TenantNetwork"},
+				Ips:     []danmtypes.RipIP{{Address: "192.168.1.70", Shareable: false}, {Address: "2001:db8:85a3::8a2e:370:7350", Shareable: false}},
+			},
+		},
+		{
+			TypeMeta:   meta_v1.TypeMeta{Kind: "ReservedIP"},
+			ObjectMeta: meta_v1.ObjectMeta{Name: "networkNameTooLong", Namespace: "rip-test"},
+			Spec: danmtypes.ReservedIPSpec{
+				Network: danmtypes.RipNetworkSelector{Name: "network-name-too-long-to-be-used-as-a-label-value-on-reservedips", Type: "TenantNetwork"},
+				Ips:     []danmtypes.RipIP{{Address: "192.168.1.70", Shareable: false}, {Address: "2001:db8:85a3::8a2e:370:7350", Shareable: false}},
+			},
+		},
+		{
+			TypeMeta:   meta_v1.TypeMeta{Kind: "ReservedIP"},
 			ObjectMeta: meta_v1.ObjectMeta{Name: "dsTnetSuccess", Namespace: "rip-test"},
 			Spec: danmtypes.ReservedIPSpec{
 				Network: danmtypes.RipNetworkSelector{Name: "superDualStack", Type: "TenantNetwork"},
@@ -408,26 +424,26 @@ var existingRips = []danmtypes.ReservedIP{
 
 var ripReferencingEps = []danmtypes.DanmEp{
 	{
-		ObjectMeta: meta_v1.ObjectMeta{Name: "epHoldingTheV4Rip", Namespace: "rip-test"},
+		ObjectMeta: meta_v1.ObjectMeta{Name: "epHoldingTheV4Rip", Namespace: "rip-test", Labels: datastructs.EpLabels(nil, danmtypes.RipReferences{V4: "sharedV4Rip"})},
 		Spec:       danmtypes.DanmEpSpec{RipRefs: danmtypes.RipReferences{V4: "sharedV4Rip"}},
 	},
 	{
-		ObjectMeta: meta_v1.ObjectMeta{Name: "epHoldingTheV6Rip", Namespace: "rip-test"},
+		ObjectMeta: meta_v1.ObjectMeta{Name: "epHoldingTheV6Rip", Namespace: "rip-test", Labels: datastructs.EpLabels(nil, danmtypes.RipReferences{V6: "sharedV6Rip"})},
 		Spec:       danmtypes.DanmEpSpec{RipRefs: danmtypes.RipReferences{V6: "sharedV6Rip"}},
 	},
 	{
-		ObjectMeta: meta_v1.ObjectMeta{Name: "epHoldingTheExclusiveRip", Namespace: "rip-test"},
+		ObjectMeta: meta_v1.ObjectMeta{Name: "epHoldingTheExclusiveRip", Namespace: "rip-test", Labels: datastructs.EpLabels(nil, danmtypes.RipReferences{V4: "exclusiveRip"})},
 		Spec:       danmtypes.DanmEpSpec{RipRefs: danmtypes.RipReferences{V4: "exclusiveRip"}},
 	},
 	{
-		ObjectMeta: meta_v1.ObjectMeta{Name: "epOfAnotherNamespace", Namespace: "another-tenant"},
+		ObjectMeta: meta_v1.ObjectMeta{Name: "epOfAnotherNamespace", Namespace: "another-tenant", Labels: datastructs.EpLabels(nil, danmtypes.RipReferences{V4: "sharedRipOfAnotherNs"})},
 		Spec:       danmtypes.DanmEpSpec{RipRefs: danmtypes.RipReferences{V4: "sharedRipOfAnotherNs"}},
 	},
 }
 
 var epListErrorEps = []danmtypes.DanmEp{
 	{
-		ObjectMeta: meta_v1.ObjectMeta{Name: "errorEp", Namespace: "rip-test"},
+		ObjectMeta: meta_v1.ObjectMeta{Name: "errorEp", Namespace: "rip-test", Labels: datastructs.EpLabels(nil, danmtypes.RipReferences{V4: "sharedV4Rip"})},
 		Spec:       danmtypes.DanmEpSpec{RipRefs: danmtypes.RipReferences{V4: "sharedV4Rip"}},
 	},
 }
@@ -471,6 +487,15 @@ var (
 		{
 			ObjectMeta: meta_v1.ObjectMeta{Name: "superDualStack", Namespace: "rip-test"},
 			Spec: danmtypes.DanmNetSpec{NetworkType: "ipvlan", NetworkID: "superDualStack",
+				Options: danmtypes.DanmNetOption{
+					Alloc:  "gAAAAAAAAAAAAAAE",
+					Alloc6: "gAAAAAAAAAAAAAAAAAAAAQ==",
+					Cidr:   "192.168.1.64/26", Pool: danmtypes.IpPool{Start: "192.168.1.70", End: "192.168.1.80", LastIp: "192.168.1.72/26"},
+					Net6: "2001:db8:85a3::8a2e:370:7334/108", Pool6: danmtypes.IpPoolV6{Cidr: "2001:db8:85a3::8a2e:370:7300/121", IpPool: danmtypes.IpPool{Start: "2001:db8:85a3::8a2e:370:7340", End: "2001:db8:85a3::8a2e:370:7350"}}}},
+		},
+		{
+			ObjectMeta: meta_v1.ObjectMeta{Name: "network-name-too-long-to-be-used-as-a-label-value-on-reservedips", Namespace: "rip-test"},
+			Spec: danmtypes.DanmNetSpec{NetworkType: "ipvlan", NetworkID: "longName",
 				Options: danmtypes.DanmNetOption{
 					Alloc:  "gAAAAAAAAAAAAAAE",
 					Alloc6: "gAAAAAAAAAAAAAAAAAAAAQ==",
@@ -654,6 +679,8 @@ var validateRipTcs = []struct {
 	{"doubleV4", "", "doubleV4", "", v1beta1.Create, true, nil, nil, nil, nil, nil, nil, false},
 	{"doubleV6", "", "doubleV6", "", v1beta1.Create, true, nil, nil, nil, nil, nil, nil, false},
 	{"reservedName", "", "dynamic", "", v1beta1.Create, true, nil, nil, nil, nil, nil, nil, false},
+	{"nameTooLongForALabelValue", "", "rip-name-that-is-too-long-to-be-used-as-a-label-value-on-danmeps", "", v1beta1.Create, true, nil, nil, nil, nil, nil, nil, false},
+	{"networkNameTooLongForALabelValue", "", "networkNameTooLong", "", v1beta1.Create, true, nil, nil, nil, nil, nil, nil, false},
 	{"dsTnetSuccessNewStatus", "", "dsTnetSuccess", "", v1beta1.Create, false, nil, nil, &ripTestStatus, nil, tnetDsLabels, nil, false},
 	{"dsCnetSuccessStatusAppend", "", "dsCnetSuccess", "bueno", v1beta1.Create, false, nil, nil, nil, &ripTestStatusCnet, cnetDsLabels, nil, false},
 	{"dsCnetSuccessStatusNoAppendDueToDupe", "", "dsCnetSuccessDupe", "bueno", v1beta1.Create, false, nil, nil, nil, &ripTestStatusCnetDupe, cnetDupeLabels, nil, false},

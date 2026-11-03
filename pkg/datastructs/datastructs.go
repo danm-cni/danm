@@ -1,6 +1,8 @@
 package datastructs
 
 import (
+	"maps"
+
 	"github.com/containernetworking/cni/pkg/types"
 	"github.com/containernetworking/cni/pkg/version"
 	danmtypes "github.com/danm-cni/danm/crd/apis/danm/v1"
@@ -17,6 +19,8 @@ const (
 	DanmApiPath            = "danm.io"
 	NetworkNameLabel       = DanmApiPath + "/network-name"
 	NetworkTypeLabel       = DanmApiPath + "/network-type"
+	V4RipLabel             = DanmApiPath + "/reserved-ip-v4"
+	V6RipLabel             = DanmApiPath + "/reserved-ip-v6"
 )
 
 var (
@@ -91,4 +95,23 @@ type IpamResult struct {
 	Ip6  string
 	Rip4 string
 	Rip6 string
+}
+
+// EpLabels returns the label set of a DanmEp: the labels of its Pod, extended with the ReservedIP references recorded in its Spec
+// ReservedIP labels are always derived from the Spec so Pods can neither spoof, nor hide a reference via their own labels
+// These labels allow listing the DanmEps referencing a ReservedIP with a label selector, without needing CRD field selectors
+func EpLabels(podLabels map[string]string, ripRefs danmtypes.RipReferences) map[string]string {
+	epLabels := maps.Clone(podLabels)
+	if epLabels == nil {
+		epLabels = make(map[string]string)
+	}
+	delete(epLabels, V4RipLabel)
+	delete(epLabels, V6RipLabel)
+	if ripRefs.V4 != "" {
+		epLabels[V4RipLabel] = ripRefs.V4
+	}
+	if ripRefs.V6 != "" {
+		epLabels[V6RipLabel] = ripRefs.V6
+	}
+	return epLabels
 }

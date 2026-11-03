@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"reflect"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ import (
 	danmscheme "github.com/danm-cni/danm/crd/client/clientset/versioned/scheme"
 	danminformers "github.com/danm-cni/danm/crd/client/informers/externalversions/danm/v1"
 	danmlisters "github.com/danm-cni/danm/crd/client/listers/danm/v1"
+	"github.com/danm-cni/danm/pkg/datastructs"
 	"github.com/danm-cni/danm/pkg/ipam"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -477,11 +479,12 @@ func (c *Controller) syncPod(ns, name string) error {
 		for _, o := range objs {
 			de := o.(*danmv1.DanmEp)
 			if de.Spec.Pod == name && de.Spec.PodUID == pod.UID {
-				if reflect.DeepEqual(de.Labels, pod.Labels) {
+				desiredLabels := datastructs.EpLabels(pod.Labels, de.Spec.RipRefs)
+				if maps.Equal(de.Labels, desiredLabels) {
 					continue
 				}
 				deNew := de.DeepCopy()
-				deNew.SetLabels(pod.Labels)
+				deNew.SetLabels(desiredLabels)
 				_, ierr = c.danmclient.DanmV1().DanmEps(ns).Update(context.TODO(), deNew, meta_v1.UpdateOptions{})
 				if ierr != nil {
 					return fmt.Errorf("DanmEp %s/%s could not be updated because: %w", ns, de.ObjectMeta.Name, ierr)
